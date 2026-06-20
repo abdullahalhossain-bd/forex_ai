@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-20T16:15:30+00:00",
+  "generated_at": "2026-06-20T16:19:32+00:00",
   "mode": "PAPER",
   "scanner": "OFF",
   "pairs": [
@@ -41,7 +41,7 @@
       "symbol": "EURUSD",
       "timeframe": "15m",
       "version": "Week3-Day21",
-      "elapsed_sec": 1.7,
+      "elapsed_sec": 3.8,
       "price": null,
       "trend": null,
       "rsi": null,
@@ -81,7 +81,7 @@
       "symbol": "GBPUSD",
       "timeframe": "15m",
       "version": "Week3-Day21",
-      "elapsed_sec": 1.5,
+      "elapsed_sec": 1.4,
       "price": null,
       "trend": null,
       "rsi": null,
@@ -121,7 +121,7 @@
       "symbol": "USDJPY",
       "timeframe": "15m",
       "version": "Week3-Day21",
-      "elapsed_sec": 3.1,
+      "elapsed_sec": 2.4,
       "price": null,
       "trend": null,
       "rsi": null,
