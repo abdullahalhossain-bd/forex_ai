@@ -1,0 +1,26 @@
+==============================
+
+AI STRATEGY REPORT
+
+Strategy: Support Reversal
+Period: Jun 2026 - Jun 2026
+Trades: 0
+Wins: 0
+Losses: 0
+Win Rate: 0.0%
+Average RR: 1:0.0
+Profit Factor: 0.0
+Max Drawdown: 0.0%
+Sharpe: 0.0
+Best Pair: N/A
+Worst Pair: N/A
+Best Setup: N/A
+Biggest Mistake: N/A
+
+Walk Forward:
+Train Win Rate: 0.0%
+Validation Win Rate: 0.0%
+Test Win Rate: 0.0%
+Overfitting Risk: LOW
+
+==============================

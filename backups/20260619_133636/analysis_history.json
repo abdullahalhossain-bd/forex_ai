@@ -1,0 +1,93 @@
+[
+  {
+    "time": "2026-06-19T11:53:18",
+    "pair": "EUR/USDT",
+    "timeframe": "15m",
+    "price": 1.14338,
+    "trend": "strong_bearish",
+    "rsi": 32.22,
+    "bias": "STRONG_SELL",
+    "confidence": 100,
+    "recommendation": "\ud83d\udd34 STRONG SELL \u2014 High confidence. Look for entry.",
+    "has_conflict": false,
+    "result": null
+  },
+  {
+    "time": "2026-06-19T14:38:43",
+    "pair": "EUR/USDT",
+    "timeframe": "15m",
+    "price": 1.14626,
+    "trend": "sideways",
+    "rsi": 65.96,
+    "bias": "SELL",
+    "confidence": 60,
+    "recommendation": "\ud83d\udd34 SELL BIAS \u2014 Moderate setup. Confirm on lower TF.",
+    "has_conflict": false,
+    "result": null
+  },
+  {
+    "time": "2026-06-19T15:05:33",
+    "pair": "EUR/USDT",
+    "timeframe": "15m",
+    "price": 1.14639,
+    "trend": "sideways",
+    "rsi": 63.73,
+    "bias": "STRONG_BUY",
+    "confidence": 80,
+    "recommendation": "\ud83d\udfe2 STRONG BUY \u2014 High confidence. Look for entry.",
+    "has_conflict": false,
+    "result": null
+  },
+  {
+    "time": "2026-06-19T17:04:27",
+    "pair": "EUR/USDT",
+    "timeframe": "15m",
+    "price": 1.14679,
+    "trend": "bullish",
+    "rsi": 63.85,
+    "bias": "BUY",
+    "confidence": 75,
+    "recommendation": "\ud83d\udfe2 BUY BIAS \u2014 Moderate setup. Confirm on lower TF.",
+    "has_conflict": false,
+    "result": null
+  },
+  {
+    "time": "2026-06-19T17:17:07",
+    "pair": "EUR/USDT",
+    "timeframe": "15m",
+    "price": 1.14692,
+    "trend": "bullish",
+    "rsi": 65.09,
+    "bias": "BUY",
+    "confidence": 75,
+    "recommendation": "\ud83d\udfe2 BUY BIAS \u2014 Moderate setup. Confirm on lower TF.",
+    "has_conflict": false,
+    "result": null
+  },
+  {
+    "time": "2026-06-19T17:37:24",
+    "pair": "EUR/USDT",
+    "timeframe": "15m",
+    "price": 1.14666,
+    "trend": "bullish",
+    "rsi": 61.51,
+    "bias": "BUY",
+    "confidence": 75,
+    "recommendation": "\ud83d\udfe2 BUY BIAS \u2014 Moderate setup. Confirm on lower TF.",
+    "has_conflict": false,
+    "result": null
+  },
+  {
+    "time": "2026-06-19T17:52:00",
+    "pair": "EUR/USDT",
+    "timeframe": "15m",
+    "price": 1.14653,
+    "trend": "bullish",
+    "rsi": 59.02,
+    "bias": "BUY",
+    "confidence": 75,
+    "recommendation": "\ud83d\udfe2 BUY BIAS \u2014 Moderate setup. Confirm on lower TF.",
+    "has_conflict": false,
+    "result": null
+  }
+]

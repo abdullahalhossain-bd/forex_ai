@@ -1,0 +1,66 @@
+{
+  "summary": {
+    "strategy": "Support Reversal",
+    "pair": "EURUSD",
+    "period": "Jun 2026 - Jun 2026",
+    "trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "win_rate": 0.0,
+    "profit": 0.0,
+    "profit_factor": 0.0,
+    "max_drawdown": 0.0,
+    "average_rr": 0.0,
+    "sharpe": 0.0,
+    "strategy_version": "v1"
+  },
+  "ranking": [],
+  "walk_forward": {
+    "train": {
+      "strategy": "Support Reversal",
+      "pair": "EURUSD",
+      "period": "Jun 2026 - Jun 2026",
+      "trades": 0,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": 0.0,
+      "profit": 0.0,
+      "profit_factor": 0.0,
+      "max_drawdown": 0.0,
+      "average_rr": 0.0,
+      "sharpe": 0.0,
+      "strategy_version": "v1"
+    },
+    "validation": {
+      "strategy": "Support Reversal",
+      "pair": "EURUSD",
+      "period": "Jun 2026 - Jun 2026",
+      "trades": 0,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": 0.0,
+      "profit": 0.0,
+      "profit_factor": 0.0,
+      "max_drawdown": 0.0,
+      "average_rr": 0.0,
+      "sharpe": 0.0,
+      "strategy_version": "v1"
+    },
+    "test": {
+      "strategy": "Support Reversal",
+      "pair": "EURUSD",
+      "period": "Jun 2026 - Jun 2026",
+      "trades": 0,
+      "wins": 0,
+      "losses": 0,
+      "win_rate": 0.0,
+      "profit": 0.0,
+      "profit_factor": 0.0,
+      "max_drawdown": 0.0,
+      "average_rr": 0.0,
+      "sharpe": 0.0,
+      "strategy_version": "v1"
+    },
+    "overfitting_risk": "LOW"
+  }
+}
