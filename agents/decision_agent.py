@@ -1,5 +1,6 @@
-# agents/decision_agent.py  —  Day 42 | Final Decision Agent (Master-Aware)
+# agents/decision_agent.py  —  Day 42 (Master-Aware) + Day 53 (Dynamic Confidence Engine)
 
+from learning.confidence_engine import ConfidenceEngine
 from utils.logger import get_logger
 
 log = get_logger("decision_agent")
@@ -8,16 +9,30 @@ log = get_logger("decision_agent")
 class DecisionAgent:
     """
     Day 42: MasterAnalyst output-কে primary signal source হিসেবে ব্যবহার করে।
+    Day 53: Final BUY/SELL decision নেওয়ার পর ConfidenceEngine দিয়ে
+            pattern + pair + timeframe + regime ভিত্তিক dynamic confidence
+            apply হয় — historical win rate, recent 10 trades, regime memory,
+            Bayesian penalty, এবং pattern skip system সব মিলিয়ে।
 
     Vote hierarchy:
         1. MasterAnalyst (LLM synthesized brain)   — weight 3
         2. Classic LLM Analyst                     — weight 2
         3. Rule engine                             — weight 1
 
-    Confidence = MasterAnalyst final_confidence (already weighted internally).
+    Confidence pipeline:
+        base_conf (Master/Rule/LLM weighted avg)
+            -> sentiment boost/reduction
+            -> Day 53 ConfidenceEngine.adjust_decision()
+                 -> historical + recent + regime + bayesian
+                 -> should_skip check (pattern disabled?)
+            -> final decision + final confidence
     """
 
     MIN_CONSENSUS = 2
+
+    def __init__(self):
+        # Day 53 — pattern-aware dynamic confidence scorer
+        self.confidence_engine = ConfidenceEngine()
 
     def decide(
         self,
@@ -50,23 +65,31 @@ class DecisionAgent:
         master_risks    = master_ctx.get("master_risks", [])
         master_critique = master_ctx.get("master_critique", "")
 
+        # Day 53 — context needed for ConfidenceEngine
+        pattern        = self._extract_pattern(analysis_out)
+        pair           = market_out.get("symbol", "EURUSD")
+        timeframe      = market_out.get("timeframe", "M15")
+        regime_label   = market_out.get("regime", {}).get("regime", "UNKNOWN")
+
         reasons  = []
         decision = "WAIT"
 
         # Gates
         if not news_ok:
             return self._result("NO TRADE", 0, risk_out,
-                ["News window active — trading blocked"])
+                ["News window active — trading blocked"],
+                pattern=pattern, pair=pair, timeframe=timeframe, regime=regime_label)
 
         if not risk_approved:
             return self._result("NO TRADE", 0, risk_out,
-                [f"Risk rejected: {risk_out.get('reject_reason')}"])
+                [f"Risk rejected: {risk_out.get('reject_reason')}"],
+                pattern=pattern, pair=pair, timeframe=timeframe, regime=regime_label)
 
         if final_signal == "NO TRADE" and has_conflict:
             return self._result("NO TRADE", 0, risk_out, [
                 f"Sentiment conflict: Technical {rule_signal} vs Sentiment {sentiment_bias}",
                 conflict_result.get("recommendation", ""),
-            ])
+            ], pattern=pattern, pair=pair, timeframe=timeframe, regime=regime_label)
 
         # Weighted voting
         votes = []
@@ -132,14 +155,74 @@ class DecisionAgent:
             if master_critique:
                 reasons.append(f"Master critique: {master_critique[:80]}")
 
+        # ──────────────────────────────────────────────────────
+        # Day 53 — Dynamic Confidence Engine final pass
+        # ──────────────────────────────────────────────────────
+        confidence_engine_result = None
+        if decision in ("BUY", "SELL"):
+            confidence_engine_result = self.confidence_engine.adjust_decision(
+                signal          = decision,
+                base_confidence = adj_conf,
+                pattern         = pattern,
+                pair            = pair,
+                timeframe       = timeframe,
+                regime          = regime_label,
+            )
+
+            if confidence_engine_result["should_skip"]:
+                decision = "NO TRADE"
+                adj_conf = 0
+                reasons.append(
+                    f"⛔ ConfidenceEngine SKIP: {confidence_engine_result.get('skip_reason')}"
+                )
+            elif confidence_engine_result["decision"] == "WAIT":
+                decision = "WAIT"
+                adj_conf = 0
+                reasons.append(
+                    f"⚠️ ConfidenceEngine WAIT: {confidence_engine_result.get('reason')}"
+                )
+            else:
+                old_conf = adj_conf
+                adj_conf = confidence_engine_result["final_confidence"]
+                reasons.append(
+                    f"🎯 Day53 Confidence: {confidence_engine_result.get('reason')} "
+                    f"({old_conf}% → {adj_conf}%)"
+                )
+
         entry = master_ctx.get("master_entry") or risk_out.get("entry")
         sl    = master_ctx.get("master_sl")    or risk_out.get("sl_price")
         tp    = master_ctx.get("master_tp1")   or risk_out.get("tp_price")
 
-        return self._result(decision, adj_conf, risk_out, reasons, entry=entry, sl=sl, tp=tp)
+        return self._result(
+            decision, adj_conf, risk_out, reasons,
+            entry=entry, sl=sl, tp=tp,
+            pattern=pattern, pair=pair, timeframe=timeframe, regime=regime_label,
+            confidence_engine_result=confidence_engine_result,
+        )
+
+    # ──────────────────────────────────────────────────────────
+    # Day 53 helper — pattern extraction from analysis pipeline
+    # ──────────────────────────────────────────────────────────
+
+    def _extract_pattern(self, analysis_out: dict) -> str:
+        """
+        ConfidenceEngine pattern-key এর জন্য একটা single representative
+        pattern বের করো। Priority: advanced pattern > candlestick pattern.
+        """
+        adv_ctx = analysis_out.get("advanced_pat_ctx", {}) or {}
+        pat_ctx = analysis_out.get("pat_ctx", {}) or {}
+
+        pattern = (
+            adv_ctx.get("top_pattern")
+            or adv_ctx.get("dominant_pattern")
+            or pat_ctx.get("latest_pattern")
+        )
+        return pattern or "Unknown"
 
     def _result(self, decision, confidence, risk_out, reasons,
-                entry=None, sl=None, tp=None) -> dict:
+                entry=None, sl=None, tp=None,
+                pattern=None, pair=None, timeframe=None, regime=None,
+                confidence_engine_result=None) -> dict:
         return {
             "decision":   decision,
             "confidence": confidence,
@@ -151,6 +234,13 @@ class DecisionAgent:
             "lot":        risk_out.get("lot", risk_out.get("lot_size", 0)),
             "rr":         risk_out.get("rr_ratio", 0),
             "reasons":    reasons,
+            # Day 53 — needed downstream (LearningAgent / MemoryIntegration)
+            # to call confidence_engine.record_outcome() after trade closes.
+            "pattern":    pattern,
+            "pair":       pair,
+            "timeframe":  timeframe,
+            "regime":     regime,
+            "confidence_engine": confidence_engine_result,
         }
 
     def print_summary(self, result: dict) -> None:
@@ -158,10 +248,11 @@ class DecisionAgent:
         icon  = icons.get(result["decision"], "⚪")
         bar   = "=" * 44
         log.info(bar)
-        log.info(f"  {icon}  FINAL DECISION  (Day 42)")
+        log.info(f"  {icon}  FINAL DECISION  (Day 42 + Day 53)")
         log.info(bar)
         log.info(f"  Decision    : {result['decision']}")
         log.info(f"  Confidence  : {result['confidence']}%")
+        log.info(f"  Pattern     : {result.get('pattern')}  ({result.get('pair')} {result.get('timeframe')} {result.get('regime')})")
         if result["decision"] in ("BUY", "SELL"):
             log.info(f"  Entry       : {result['entry']}")
             log.info(f"  SL          : {result['sl']}  ({result['sl_pips']} pips)")
@@ -182,4 +273,9 @@ class DecisionAgent:
             "final_tp":         result.get("tp"),
             "final_lot":        result.get("lot"),
             "final_rr":         result.get("rr"),
+            # Day 53
+            "final_pattern":    result.get("pattern"),
+            "final_pair":       result.get("pair"),
+            "final_timeframe":  result.get("timeframe"),
+            "final_regime":     result.get("regime"),
         }
