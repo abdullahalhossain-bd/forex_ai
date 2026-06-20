@@ -18,6 +18,12 @@
 # একই interface রাখা হয়েছে যাতে DecisionAgent বা circuit breaker
 # কোনো change ছাড়াই কাজ করতে পারে — mode পাল্টালে শুধু .env-এ
 # EXECUTION_MODE পাল্টাবে।
+#
+# Day 37 fix: __init__ এখন একটা existing PaperTrader instance accept করে
+# (`paper_trader=`)। আগে এই router নিজের আলাদা PaperTrader বানাতো, যেটা
+# core/trader.py-এর AITrader নিজের self._paper থেকে আলাদা balance/state
+# track করতো — দুটো জায়গায় balance drift করার bug ছিল। এখন একই instance
+# শেয়ার করে।
 # ============================================================
 
 from utils.logger import get_logger
@@ -33,18 +39,22 @@ class ExecutionRouter:
     execution backend-এ পাঠায়।
 
     Usage:
-        router = ExecutionRouter()
+        paper = PaperTrader(db=db)
+        router = ExecutionRouter(mode="paper", db=db, paper_trader=paper)
         trade = router.execute(decision_result)
     """
 
-    def __init__(self, mode: str = None, db=None):
+    def __init__(self, mode: str = None, db=None, paper_trader: PaperTrader = None):
         self.mode = (mode or EXECUTION_MODE).lower()
         self._paper_trader = None
         self._mt5_executor = None
         self._db = db
 
         if self.mode == "paper":
-            self._paper_trader = PaperTrader(db=self._db)
+            # Day 37 fix: reuse the caller's PaperTrader instance if given,
+            # instead of always constructing a fresh (and separately
+            # state-tracked) one.
+            self._paper_trader = paper_trader or PaperTrader(db=self._db)
             log.info("[ExecutionRouter] Mode: PAPER (simulation)")
 
         elif self.mode == "mt5_demo":

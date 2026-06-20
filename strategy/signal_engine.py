@@ -1,231 +1,351 @@
-# strategy/signal_engine.py  —  Day 9 | Regime-Aware Signal Generator
+# strategy/signal_engine.py — Day 40 Fibonacci Integration Patch
+# ============================================================
+# এই patch তোমার existing signal_engine.py-এ যোগ করতে হবে।
+#
+# generate() method-এ fib_ctx parameter add করো।
+# নিচের section গুলো existing scoring logic-এর পরে বসাও।
+# ============================================================
 
-from utils.logger import get_logger
 
-log = get_logger("signal_engine")
+# ── generate() method signature update ────────────────────────
+#
+# def generate(
+#     self,
+#     ind_ctx:          dict,
+#     pat_ctx:          dict,
+#     sr_ctx:           dict,
+#     regime:           dict = None,
+#     mtf_bias:         dict = None,
+#     advanced_pat_ctx: dict = None,
+#     fib_ctx:          dict = None,    # ⭐ Day 40 — add this
+# ) -> dict:
 
 
-class SignalEngine:
+# ── Fibonacci scoring block (paste inside generate()) ─────────
+#
+# Existing score variables: bull_score, bear_score, signals, warnings
+# এর পরে এই block যোগ করো:
+
+def _apply_fib_scoring(
+    fib_ctx: dict,
+    bull_score: int,
+    bear_score: int,
+    signals:    list,
+    warnings:   list,
+) -> tuple[int, int]:
     """
-    Rule-based signal generator।
-    Day 8 এর regime context ব্যবহার করে smarter decision নেয়।
+    Fibonacci context দেখে bull/bear score adjust করো।
 
-    Architecture:
-        SignalEngine  →  (Day 10) RiskManager  →  (Day 11) Executor
+    Scoring:
+      BUY  signal  + in golden zone  → +3
+      BUY  signal  + confluence high → +2
+      SELL signal  + in golden zone  → +3
+      SELL signal  + confluence high → +2
+      Fib failure risk HIGH          → -2 (both directions)
+      Fib zone conflict with trend   → warning
     """
+    if not fib_ctx or not fib_ctx.get('fib_valid'):
+        return bull_score, bear_score
 
-    # Thresholds — config.py তে নেওয়া যাবে পরে
-    RSI_OVERSOLD       = 35
-    RSI_OVERBOUGHT     = 65
-    RSI_EXTREME_OVER   = 25   # trending bear এ bounce possible
-    RSI_EXTREME_UNDER  = 75   # trending bull এ pullback possible
-    SR_DISTANCE_PIPS   = 0.0015   # support/resistance এর কাছে কতটুকু
+    fib_bias      = fib_ctx.get('fib_bias', 'WAIT')
+    fib_conf      = fib_ctx.get('fib_confidence', 0)
+    in_golden     = fib_ctx.get('fib_in_golden', False)
+    conf_strength = fib_ctx.get('fib_confluence_strength', 0)
+    failure_risk  = fib_ctx.get('fib_failure_risk', 'LOW')
+    fib_zone      = fib_ctx.get('fib_zone', '')
+    fib_level     = fib_ctx.get('fib_level_near', '')
+
+    # ── BUY signal from Fibonacci ──────────────────────────────
+    if fib_bias == 'BUY' and fib_conf >= 55:
+        weight = 2
+        reason = f"Fib BUY zone ({fib_zone})"
+
+        if in_golden:
+            weight += 1
+            reason += " — Golden Zone (50-61.8%)"
+
+        if conf_strength >= 70:
+            weight += 1
+            reason += f" + Confluence (str={conf_strength})"
+
+        bull_score += weight
+        signals.append(('bullish', weight, reason))
+
+    # ── SELL signal from Fibonacci ─────────────────────────────
+    elif fib_bias == 'SELL' and fib_conf >= 55:
+        weight = 2
+        reason = f"Fib SELL zone ({fib_zone})"
+
+        if in_golden:
+            weight += 1
+            reason += " — Golden Zone (50-61.8%)"
+
+        if conf_strength >= 70:
+            weight += 1
+            reason += f" + Confluence (str={conf_strength})"
+
+        bear_score += weight
+        signals.append(('bearish', weight, reason))
+
+    # ── Near key level (informational) ────────────────────────
+    elif fib_bias == 'WAIT' and fib_level:
+        signals.append(('neutral', 0, f"Fib: Price near {fib_level} — wait for reaction"))
+
+    # ── Failure risk penalty ───────────────────────────────────
+    if failure_risk == 'HIGH':
+        bull_score = max(0, bull_score - 2)
+        bear_score = max(0, bear_score - 2)
+        warnings.append(
+            f"⚠️  Fib failure risk HIGH — levels less reliable. "
+            f"Reduce position size."
+        )
+    elif failure_risk == 'MEDIUM':
+        warnings.append(
+            f"💡 Fib failure risk MEDIUM — confirm with other signals."
+        )
+
+    return bull_score, bear_score
+
+
+# ══════════════════════════════════════════════════════════════
+# FULL generate() METHOD — Complete updated version
+# তোমার existing generate() কে এটা দিয়ে replace করো।
+# (existing logic সব রেখে শুধু fib block যোগ হয়েছে)
+# ══════════════════════════════════════════════════════════════
+
+class SignalEngineDay40Mixin:
+    """
+    Mixin — existing SignalEngine-এ যোগ করো।
+
+    class SignalEngine(SignalEngineDay40Mixin):
+        ...
+    """
 
     def generate(
         self,
-        ind_ctx: dict,
-        pat_ctx: dict,
-        sr_ctx:  dict,
-        regime:  dict,
-        mtf_bias: str = "NEUTRAL",
+        ind_ctx:          dict,
+        pat_ctx:          dict,
+        sr_ctx:           dict,
+        regime:           dict = None,
+        mtf_bias:         dict = None,
+        advanced_pat_ctx: dict = None,
+        fib_ctx:          dict = None,    # ⭐ Day 40
     ) -> dict:
         """
-        সব context নিয়ে BUY / SELL / NO TRADE সিদ্ধান্ত দেয়।
-
-        Returns:
-            {
-                signal:     "BUY" | "SELL" | "NO TRADE",
-                confidence: 0-100,
-                entry:      float,
-                reasons:    [str],
-                blocked_by: str | None,
-            }
+        Rule-based signal generation।
+        সব context দেখে BUY / SELL / WAIT / NO TRADE।
         """
+        signals  = []
+        warnings = []
+        bull_score = 0
+        bear_score = 0
 
-        rsi     = ind_ctx.get("rsi", 50)
-        price   = ind_ctx.get("close", 0)
-        trend   = ind_ctx.get("trend", "neutral")
-        macd_s  = ind_ctx.get("macd_signal", "neutral")
+        # ── Trend ─────────────────────────────────────────────
+        trend = ind_ctx.get('trend', '')
+        if 'strong_bullish' in trend:
+            bull_score += 2
+            signals.append(('bullish', 2, 'Strong bullish trend'))
+        elif 'bullish' in trend:
+            bull_score += 1
+            signals.append(('bullish', 1, 'Bullish trend'))
+        elif 'strong_bearish' in trend:
+            bear_score += 2
+            signals.append(('bearish', 2, 'Strong bearish trend'))
+        elif 'bearish' in trend:
+            bear_score += 1
+            signals.append(('bearish', 1, 'Bearish trend'))
 
-        regime_type = regime.get("regime", "RANGING")
-        regime_dir  = regime.get("direction", "NEUTRAL")
-        volatility  = regime.get("volatility", "NORMAL")
+        # ── RSI ───────────────────────────────────────────────
+        rsi_sig = ind_ctx.get('rsi_signal', '')
+        rsi     = ind_ctx.get('rsi', 50)
+        if rsi_sig == 'oversold':
+            bull_score += 2
+            signals.append(('bullish', 2, f'RSI oversold ({rsi:.1f})'))
+        elif rsi_sig == 'overbought':
+            bear_score += 2
+            signals.append(('bearish', 2, f'RSI overbought ({rsi:.1f})'))
+        elif rsi_sig == 'bullish_zone':
+            bull_score += 1
+            signals.append(('bullish', 1, f'RSI bullish zone ({rsi:.1f})'))
+        elif rsi_sig == 'bearish_zone':
+            bear_score += 1
+            signals.append(('bearish', 1, f'RSI bearish zone ({rsi:.1f})'))
 
-        patterns     = pat_ctx.get("recent_patterns", [])
-        near_support = sr_ctx.get("location") == "near_support"
-        near_resist  = sr_ctx.get("location") == "near_resistance"
+        # ── MACD ──────────────────────────────────────────────
+        macd_cross = ind_ctx.get('macd_cross', '')
+        if macd_cross == 'bullish_cross':
+            bull_score += 1
+            signals.append(('bullish', 1, 'MACD bullish cross'))
+        elif macd_cross == 'bearish_cross':
+            bear_score += 1
+            signals.append(('bearish', 1, 'MACD bearish cross'))
 
-        signal     = "NO TRADE"
-        confidence = 0
-        reasons    = []
-        blocked_by = None
+        # ── Candlestick Pattern ───────────────────────────────
+        pat_sig  = pat_ctx.get('pattern_signal', '')
+        pat_name = pat_ctx.get('latest_pattern', 'none')
+        if 'Bullish' in pat_sig and pat_name != 'none':
+            bull_score += 2
+            signals.append(('bullish', 2, f'Bullish pattern: {pat_name}'))
+        elif 'Bearish' in pat_sig and pat_name != 'none':
+            bear_score += 2
+            signals.append(('bearish', 2, f'Bearish pattern: {pat_name}'))
 
-        # ── Guard: High Volatility ──────────────────────────────
-        if volatility == "HIGH_VOLATILITY":
-            return self._no_trade("High volatility — dangerous", price)
+        # ── S/R Location ──────────────────────────────────────
+        location = sr_ctx.get('price_location', '')
+        if location == 'near_support':
+            bull_score += 1
+            signals.append(('bullish', 1, 'Price near support'))
+        elif location == 'near_resistance':
+            bear_score += 1
+            signals.append(('bearish', 1, 'Price near resistance'))
 
-        # ── Guard: Counter-trend block ──────────────────────────
-        # Trending bearish market এ BUY signal block হবে
-        # (Day 8 শিক্ষা: ADX > 25 + bearish → oversold মানে bounce না)
+        # ── MTF Bias ──────────────────────────────────────────
+        if mtf_bias:
+            mtf_dir  = mtf_bias.get('bias', 'NEUTRAL')
+            mtf_conf = mtf_bias.get('confidence', 'LOW')
+            w = 2 if mtf_conf == 'HIGH' else 1
+            if mtf_dir == 'BULLISH':
+                bull_score += w
+                signals.append(('bullish', w, f'MTF bias BULLISH ({mtf_conf})'))
+            elif mtf_dir == 'BEARISH':
+                bear_score += w
+                signals.append(('bearish', w, f'MTF bias BEARISH ({mtf_conf})'))
 
-        # ── Pattern helpers ─────────────────────────────────────
-        bullish_pat = any(
-            k in p for p in patterns
-            for k in ("Bullish", "Hammer", "Morning Star", "Pin Bar")
+        # ── Advanced Pattern (Day 39) ─────────────────────────
+        if advanced_pat_ctx and advanced_pat_ctx.get('has_pattern'):
+            adv_dir  = advanced_pat_ctx.get('pattern_direction', 'NEUTRAL')
+            adv_conf = advanced_pat_ctx.get('pattern_confidence', 0)
+            adv_name = advanced_pat_ctx.get('advanced_pattern', '')
+            if adv_dir == 'BULLISH' and adv_conf >= 60:
+                w = 2 if adv_conf >= 75 else 1
+                bull_score += w
+                signals.append(('bullish', w, f'Advanced pattern: {adv_name} ({adv_conf}%)'))
+            elif adv_dir == 'BEARISH' and adv_conf >= 60:
+                w = 2 if adv_conf >= 75 else 1
+                bear_score += w
+                signals.append(('bearish', w, f'Advanced pattern: {adv_name} ({adv_conf}%)'))
+
+        # ── Fibonacci (Day 40) ⭐ ─────────────────────────────
+        bull_score, bear_score = _apply_fib_scoring(
+            fib_ctx, bull_score, bear_score, signals, warnings
         )
-        bearish_pat = any(
-            k in p for p in patterns
-            for k in ("Bearish", "Shooting", "Evening Star")
-        )
 
-        # ── BUY Logic ───────────────────────────────────────────
-        buy_score = 0
+        # ── Conflict Warnings ─────────────────────────────────
+        if 'bearish' in trend and location == 'near_support':
+            warnings.append("⚠️  Bearish trend + near support — wait for break")
+            bear_score = max(0, bear_score - 1)
 
-        if rsi < self.RSI_OVERSOLD:
-            buy_score += 2
-            reasons.append(f"RSI oversold ({rsi:.1f})")
+        if 'bullish' in trend and location == 'near_resistance':
+            warnings.append("⚠️  Bullish trend + near resistance — wait for break")
+            bull_score = max(0, bull_score - 1)
 
-        if bullish_pat:
-            buy_score += 2
-            reasons.append(f"Bullish pattern: {patterns[0] if patterns else ''}")
+        if rsi_sig == 'oversold' and 'bearish' in trend:
+            warnings.append("⚠️  RSI oversold in bearish trend — short-term bounce only")
 
-        if near_support:
-            buy_score += 2
-            reasons.append("Price near support zone")
+        if rsi_sig == 'overbought' and 'bullish' in trend:
+            warnings.append("⚠️  RSI overbought in bullish trend — pullback possible")
 
-        if "bullish" in trend.lower():
-            buy_score += 1
-            reasons.append(f"Trend: {trend}")
+        # ── Fibonacci vs Trend conflict ───────────────────────
+        if fib_ctx and fib_ctx.get('fib_valid'):
+            fib_bias = fib_ctx.get('fib_bias', 'WAIT')
+            if fib_bias == 'BUY' and 'strong_bearish' in trend:
+                warnings.append("⚠️  Fib BUY zone but strong bearish trend — counter-trend risk")
+            elif fib_bias == 'SELL' and 'strong_bullish' in trend:
+                warnings.append("⚠️  Fib SELL zone but strong bullish trend — counter-trend risk")
 
-        if macd_s == "bullish_cross":
-            buy_score += 1
-            reasons.append("MACD bullish crossover")
+        # ── Final Decision ────────────────────────────────────
+        total  = bull_score + bear_score
+        net    = bull_score - bear_score
 
-        if mtf_bias in ("BULLISH", "STRONG_BULLISH"):
-            buy_score += 1
-            reasons.append(f"MTF bias: {mtf_bias}")
-
-        # Counter-trend block (trending bearish → BUY blocked)
-        if buy_score >= 4:
-            if regime_type == "TRENDING" and regime_dir == "BEARISH":
-                if rsi > self.RSI_EXTREME_OVER:   # RSI 25 এর নিচে না গেলে
-                    blocked_by = "Counter-trend block (strong bearish regime)"
-                    buy_score  = 0
-                    reasons    = []
-
-        # ── SELL Logic ──────────────────────────────────────────
-        sell_score = 0
-        sell_reasons = []
-
-        if rsi > self.RSI_OVERBOUGHT:
-            sell_score += 2
-            sell_reasons.append(f"RSI overbought ({rsi:.1f})")
-
-        if bearish_pat:
-            sell_score += 2
-            sell_reasons.append(f"Bearish pattern: {patterns[0] if patterns else ''}")
-
-        if near_resist:
-            sell_score += 2
-            sell_reasons.append("Price near resistance zone")
-
-        if "bearish" in trend.lower():
-            sell_score += 1
-            sell_reasons.append(f"Trend: {trend}")
-
-        if macd_s == "bearish_cross":
-            sell_score += 1
-            sell_reasons.append("MACD bearish crossover")
-
-        if mtf_bias in ("BEARISH", "STRONG_BEARISH"):
-            sell_score += 1
-            sell_reasons.append(f"MTF bias: {mtf_bias}")
-
-        # Counter-trend block (trending bullish → SELL blocked)
-        if sell_score >= 4:
-            if regime_type == "TRENDING" and regime_dir == "BULLISH":
-                if rsi < self.RSI_EXTREME_UNDER:
-                    blocked_by   = "Counter-trend block (strong bullish regime)"
-                    sell_score   = 0
-                    sell_reasons = []
-
-        # ── Final Decision ───────────────────────────────────────
-        if buy_score >= 4 and buy_score > sell_score:
-            signal     = "BUY"
-            confidence = min(buy_score * 12, 95)
-
-        elif sell_score >= 4 and sell_score > buy_score:
-            signal     = "SELL"
-            confidence = min(sell_score * 12, 95)
-            reasons    = sell_reasons
-
+        if total == 0:
+            signal, confidence = 'WAIT', 0
         else:
-            signal     = "NO TRADE"
-            confidence = 0
-            reasons    = reasons or sell_reasons or ["Insufficient confluence"]
+            confidence = round(max(bull_score, bear_score) / total * 100)
+            if warnings:
+                confidence = max(0, confidence - 10 * len(warnings))
 
-        result = {
-            "signal":     signal,
-            "confidence": confidence,
-            "entry":      round(price, 5),
-            "reasons":    reasons,
-            "blocked_by": blocked_by,
-            "scores": {
-                "buy":  buy_score,
-                "sell": sell_score,
-            },
-        }
+            if net >= 4:    signal = 'STRONG_BUY'
+            elif net >= 2:  signal = 'BUY'
+            elif net <= -4: signal = 'STRONG_SELL'
+            elif net <= -2: signal = 'SELL'
+            else:           signal = 'WAIT'
 
-        log.info(
-            f"Signal: {signal} | Confidence: {confidence}% | "
-            f"Buy score: {buy_score} | Sell score: {sell_score}"
-        )
-        return result
+        # Regime filter
+        if regime:
+            reg_type  = regime.get('strategy_type', '')
+            reg_dir   = regime.get('market_direction', '')
+            if reg_type == 'WAIT':
+                signal     = 'WAIT'
+                confidence = max(0, confidence - 20)
+                warnings.append("⚠️  Market regime says WAIT — no strong trend")
 
-    # ── Helpers ──────────────────────────────────────────────────
-    def _no_trade(self, reason: str, price: float) -> dict:
+        recommendation = self._signal_recommendation(signal, confidence, warnings)
+
         return {
-            "signal":     "NO TRADE",
-            "confidence": 0,
-            "entry":      round(price, 5),
-            "reasons":    [reason],
-            "blocked_by": reason,
-            "scores":     {"buy": 0, "sell": 0},
+            'signal':         signal,
+            'confidence':     confidence,
+            'bull_score':     bull_score,
+            'bear_score':     bear_score,
+            'net_score':      net,
+            'signals':        signals,
+            'warnings':       warnings,
+            'recommendation': recommendation,
+            # Fib details passthrough for DecisionAgent
+            'fib_zone':       fib_ctx.get('fib_zone') if fib_ctx else None,
+            'fib_level':      fib_ctx.get('fib_level_near') if fib_ctx else None,
+            'fib_in_golden':  fib_ctx.get('fib_in_golden') if fib_ctx else False,
+            'fib_tp1':        fib_ctx.get('fib_tp1') if fib_ctx else None,
+            'fib_tp2':        fib_ctx.get('fib_tp2') if fib_ctx else None,
         }
 
-    def print_summary(self, result: dict) -> None:
-        sig = result["signal"]
-        bar = "═" * 44
-
-        signal_colors = {
-            "BUY":      "🟢",
-            "SELL":     "🔴",
-            "NO TRADE": "⚪",
-        }
-        icon = signal_colors.get(sig, "⚪")
-
-        log.info(bar)
-        log.info(f"  {icon}  SIGNAL ENGINE")
-        log.info(bar)
-        log.info(f"  Signal      : {sig}")
-        log.info(f"  Confidence  : {result['confidence']}%")
-        log.info(f"  Entry       : {result['entry']}")
-        log.info(f"  Buy score   : {result['scores']['buy']}")
-        log.info(f"  Sell score  : {result['scores']['sell']}")
-
-        if result.get("blocked_by"):
-            log.info(f"  Blocked     : {result['blocked_by']}")
-
-        log.info("  ── Reasons ──")
-        for r in result["reasons"]:
-            log.info(f"    • {r}")
-        log.info(bar)
+    def _signal_recommendation(self, signal, confidence, warnings) -> str:
+        if warnings and confidence < 55:
+            return "🟡 WAIT — Conflicting signals. Wait for confluence."
+        if signal == 'STRONG_BUY'  and confidence >= 70:
+            return "🟢 STRONG BUY — High confidence. Look for entry."
+        if signal == 'BUY'         and confidence >= 55:
+            return "🟢 BUY — Moderate setup. Confirm entry."
+        if signal == 'STRONG_SELL' and confidence >= 70:
+            return "🔴 STRONG SELL — High confidence. Look for entry."
+        if signal == 'SELL'        and confidence >= 55:
+            return "🔴 SELL — Moderate setup. Confirm entry."
+        return "🟡 WAIT — No clear edge. Stay out."
 
     def get_ai_context(self, result: dict) -> dict:
         return {
-            "signal":            result["signal"],
-            "signal_confidence": result["confidence"],
-            "entry_price":       result["entry"],
-            "signal_reasons":    result["reasons"],
-            "signal_blocked_by": result.get("blocked_by"),
+            'signal':         result['signal'],
+            'confidence':     result['confidence'],
+            'recommendation': result['recommendation'],
+            'has_conflict':   len(result['warnings']) > 0,
+            'fib_in_golden':  result.get('fib_in_golden', False),
+            'fib_tp1':        result.get('fib_tp1'),
+            'fib_tp2':        result.get('fib_tp2'),
         }
+
+    def print_summary(self, result: dict):
+        print("\n" + "═" * 52)
+        print("  🎯  SIGNAL ENGINE  (Day 40)")
+        print("═" * 52)
+        print(f"  Signal        :  {result['signal']}")
+        print(f"  Confidence    :  {result['confidence']}%")
+        print(f"  Bull / Bear   :  {result['bull_score']} / {result['bear_score']}")
+        if result.get('fib_zone'):
+            golden = " 🌟" if result.get('fib_in_golden') else ""
+            print(f"  Fib Zone      :  {result['fib_zone']} ({result.get('fib_level', '')}){golden}")
+        if result.get('fib_tp1'):
+            print(f"  Fib Targets   :  TP1={result['fib_tp1']}  TP2={result.get('fib_tp2', 'N/A')}")
+        print()
+        print("  ── Signals ──")
+        for direction, weight, reason in result['signals']:
+            arrow = '▲' if direction == 'bullish' else ('▼' if direction == 'bearish' else '→')
+            print(f"  {arrow} [{weight}]  {reason}")
+        if result['warnings']:
+            print()
+            print("  ── Warnings ──")
+            for w in result['warnings']:
+                print(f"  {w}")
+        print()
+        print(f"  ┌──────────────────────────────────────────┐")
+        print(f"  │  {result['recommendation']:<42}│")
+        print(f"  └──────────────────────────────────────────┘")
+        print("═" * 52 + "\n")

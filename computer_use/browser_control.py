@@ -1,241 +1,295 @@
-# computer_use/browser_control.py  —  Day 45 | Browser Automation (Computer Use Layer)
+# computer_use/browser_controller.py  —  Day 46 | Browser Automation (Direct Control Layer)
 # ============================================================
-# AI যেন মানুষের মতো ব্রাউজার খুলে TradingView browse করতে পারে,
-# symbol/timeframe পাল্টাতে পারে — Playwright দিয়ে।
+# Day 45-এ pyautogui screenshot দেখে "আন্দাজ করে" button খোঁজে।
+# Day 46-এ সরাসরি browser DOM control: selector দিয়ে exact element
+# ধরা, attribute/text পড়ে state verify করা — screenshot লাগে না।
 #
-# screen_controller.py (pyautogui) পুরো OS desktop control করে, কিন্তু
-# browser-এর ভেতরের element খোঁজার জন্য CSS selector অনেক বেশি
-# reliable। তাই browser-based কাজের জন্য আলাদাভাবে Playwright ব্যবহার
-# করা হলো — element selector fail করলে computer_use/vision.py-এর
-# OCR দিয়ে action verify করা যায়।
+# Engine: Playwright
+#   (doc নিজেই বলেছে "10/10 করতে Playwright consider করো" — Selenium-এর
+#    চেয়ে faster, better auto-waiting, more reliable; আর Day 45-এর
+#    browser_control.py-ও একই engine ব্যবহার করে, তাই নতুন dependency
+#    লাগছে না।)
+#
+# Bonus (10/10 checklist থেকে) যা এই ফাইলে আছে:
+#   ✅ Session management   — persistent browser profile (login টিকে থাকে)
+#   ✅ Retry + Recovery     — fail → wait → reload → retry → alert
+#   ✅ Activity log         — timestamp/action/result/error JSONL ফাইলে
 #
 # Requirements:
 #   pip install playwright
 #   playwright install chromium
 # ============================================================
 
+import json
 import os
 import time
 from datetime import datetime, timezone
 
 from utils.logger import get_logger
-from computer_use.safety import SafetyLayer
 
-log = get_logger("computer_use.browser")
+log = get_logger("computer_use.browser_controller")
 
 try:
     from playwright.sync_api import sync_playwright
     PLAYWRIGHT_AVAILABLE = True
 except Exception as e:
     PLAYWRIGHT_AVAILABLE = False
-    log.warning(f"[BrowserAgent] playwright unavailable: {e}")
+    log.warning(f"[BrowserController] playwright unavailable: {e}")
+
+DEFAULT_PROFILE_DIR = "computer_use/browser_profile"      # session persistence
+DEFAULT_ACTIVITY_LOG = "computer_use/logs/browser_activity.jsonl"
+DEFAULT_ERROR_DIR = "computer_use/errors"
 
 
-class BrowserAgent:
+class BrowserController:
     """
-    Computer Use Layer-এর browser hand। Generic navigation + retry/error
-    handling + safety check + TradingView-specific helper methods।
+    Day 46 core file। Chrome launch, navigation, DOM click/type/read,
+    retry+recovery, persistent session, activity logging — সব এখানে।
+
+    TradingView-specific উঁচু-স্তরের কাজ (open chart, change timeframe,
+    verify ইত্যাদি) `tradingview_agent.py`-তে — এই class শুধু generic
+    "direct control" engine।
 
     Usage:
-        agent = BrowserAgent(safety=SafetyLayer())
-        result = agent.run_tradingview_test("EURUSD", "15")
-        agent.close()
+        bc = BrowserController()
+        bc.start()
+        bc.goto_with_recovery("https://www.tradingview.com")
+        text = bc.get_text(".some-selector")
+        bc.close()
     """
 
-    def __init__(self, safety: SafetyLayer = None, headless: bool = False,
-                 error_dir: str = "computer_use/errors"):
-        self.safety = safety
+    def __init__(
+        self,
+        headless: bool = False,
+        profile_dir: str = DEFAULT_PROFILE_DIR,
+        activity_log_path: str = DEFAULT_ACTIVITY_LOG,
+        use_persistent_session: bool = True,
+    ):
         self.headless = headless
-        self.error_dir = error_dir
+        self.profile_dir = profile_dir
+        self.activity_log_path = activity_log_path
+        self.use_persistent_session = use_persistent_session
+
         self.playwright = None
-        self.browser = None
+        self.browser = None        # শুধু non-persistent mode-এ ব্যবহার হয়
+        self.context = None
         self.page = None
-        os.makedirs(self.error_dir, exist_ok=True)
+
+        os.makedirs(os.path.dirname(self.activity_log_path) or ".", exist_ok=True)
+        os.makedirs(DEFAULT_ERROR_DIR, exist_ok=True)
 
     # ═══════════════════════════════════════════════════════
-    # LIFECYCLE
+    # 1. CHROME LAUNCH  (+ Session Management bonus ⭐⭐⭐)
     # ═══════════════════════════════════════════════════════
 
     def start(self) -> bool:
         if not PLAYWRIGHT_AVAILABLE:
-            log.error("[BrowserAgent] Playwright not installed")
+            log.error("[BrowserController] Playwright not installed")
+            self.log_activity("start", "FAILED", error="playwright_not_installed")
             return False
+
         self.playwright = sync_playwright().start()
-        self.browser = self.playwright.chromium.launch(
-            headless=self.headless, args=["--start-maximized"]
-        )
-        self.page = self.browser.new_page(viewport={"width": 1600, "height": 900})
-        log.info("[BrowserAgent] Browser started ✅")
+
+        if self.use_persistent_session:
+            # প্রতিবার নতুন করে login না করার জন্য — cookies/localStorage
+            # একই profile_dir-এ save হয়ে থাকে, পরের রান-এও login state টিকে থাকে।
+            os.makedirs(self.profile_dir, exist_ok=True)
+            self.context = self.playwright.chromium.launch_persistent_context(
+                self.profile_dir,
+                headless=self.headless,
+                viewport={"width": 1600, "height": 900},
+                args=["--start-maximized"],
+            )
+            self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
+            log.info(f"[BrowserController] Chrome started ✅ (persistent profile: {self.profile_dir})")
+        else:
+            self.browser = self.playwright.chromium.launch(
+                headless=self.headless, args=["--start-maximized"]
+            )
+            self.context = self.browser.new_context(viewport={"width": 1600, "height": 900})
+            self.page = self.context.new_page()
+            log.info("[BrowserController] Chrome started ✅ (fresh session)")
+
+        self.log_activity("start", "SUCCESS")
         return True
 
     def close(self) -> None:
         try:
+            if self.context:
+                self.context.close()
             if self.browser:
                 self.browser.close()
             if self.playwright:
                 self.playwright.stop()
-            log.info("[BrowserAgent] Browser closed 🔴")
+            self.log_activity("close", "SUCCESS")
+            log.info("[BrowserController] Browser closed 🔴")
         except Exception as e:
-            log.warning(f"[BrowserAgent] close() error: {e}")
+            self.log_activity("close", "FAILED", error=str(e))
+            log.warning(f"[BrowserController] close() error: {e}")
 
     # ═══════════════════════════════════════════════════════
-    # GENERIC NAVIGATION  (with retry + error handling)
+    # 2. NAVIGATION
     # ═══════════════════════════════════════════════════════
 
-    def goto(self, url: str, retries: int = 2, wait_after: float = 3.0) -> bool:
-        for attempt in range(1, retries + 2):
-            try:
-                self.page.goto(url, wait_until="domcontentloaded", timeout=20000)
-                time.sleep(wait_after)
-                log.info(f"[BrowserAgent] Navigated -> {url}")
-                return True
-            except Exception as e:
-                log.warning(f"[BrowserAgent] goto failed (attempt {attempt}): {e}")
-                time.sleep(1.5)
-        self._save_error("goto_failed")
-        return False
+    def goto(self, url: str, wait_after: float = 2.0, timeout: int = 20000) -> None:
+        """একবারের চেষ্টা — fail করলে exception raise হবে (retry চাইলে
+        goto_with_recovery() ব্যবহার করো)।"""
+        self.page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+        time.sleep(wait_after)
+        log.info(f"[BrowserController] Navigated -> {url}")
 
-    def click_selector(self, selector: str, retries: int = 2, timeout: int = 5000,
-                       safety_context: dict = None) -> bool:
-        """CSS/role selector দিয়ে click করো — retry ও safety check সহ।"""
-        if not self._safety_approved("CLICK", safety_context):
-            return False
-        for attempt in range(1, retries + 2):
-            try:
-                el = self.page.locator(selector).first
-                el.wait_for(timeout=timeout)
-                el.click()
-                log.info(f"[BrowserAgent] Clicked: {selector}")
-                return True
-            except Exception as e:
-                log.warning(f"[BrowserAgent] click failed '{selector}' (attempt {attempt}): {e}")
-                time.sleep(1)
-        self._save_error(f"click_failed_{selector[:20]}")
-        return False
+    def goto_with_recovery(self, url: str, action_name: str = None,
+                            max_retries: int = 2, wait_seconds: int = 5) -> bool:
+        """Retry + Recovery System — doc flow: load failed → wait → reload → retry → alert"""
+        action_name = action_name or f"goto_{url}"
+        return self.with_retry_recovery(
+            lambda: self.goto(url), action_name, max_retries, wait_seconds
+        )
 
     # ═══════════════════════════════════════════════════════
-    # TRADINGVIEW HELPERS
+    # 3. DOM INTERACTION  (click / type / read)
     # ═══════════════════════════════════════════════════════
 
-    def open_tradingview(self, symbol: str = "EURUSD") -> bool:
-        url = f"https://www.tradingview.com/chart/?symbol=FX:{symbol}"
-        ok = self.goto(url, wait_after=7.0)
-        if ok:
-            self.page.keyboard.press("Escape")
-            time.sleep(1)
-            log.info(f"[BrowserAgent] TradingView loaded ✅ ({symbol})")
-        return ok
+    def click(self, selector: str, timeout: int = 5000) -> None:
+        el = self.page.locator(selector).first
+        el.wait_for(timeout=timeout)
+        el.click()
+        log.info(f"[BrowserController] Clicked: {selector}")
 
-    def search_symbol(self, symbol: str) -> bool:
-        """'/' shortcut দিয়ে symbol search box খুলে নতুন symbol লোড করো।"""
+    def click_with_recovery(self, selector: str, action_name: str = None,
+                             max_retries: int = 2, wait_seconds: int = 3) -> bool:
+        action_name = action_name or f"click_{selector[:30]}"
+        return self.with_retry_recovery(
+            lambda: self.click(selector), action_name, max_retries, wait_seconds
+        )
+
+    def type_text(self, selector: str, text: str, delay: int = 60) -> None:
+        el = self.page.locator(selector).first
+        el.wait_for(timeout=5000)
+        el.fill("")
+        el.type(text, delay=delay)
+        log.info(f"[BrowserController] Typed '{text}' into {selector}")
+
+    def press_key(self, key: str) -> None:
+        self.page.keyboard.press(key)
+        log.info(f"[BrowserController] Key pressed: {key}")
+
+    def get_text(self, selector: str, timeout: int = 5000) -> str:
         try:
-            self.page.keyboard.press("/")
-            time.sleep(1)
-            self.page.keyboard.type(symbol, delay=80)
-            time.sleep(1.5)
-            self.page.keyboard.press("Enter")
-            time.sleep(2)
-            log.info(f"[BrowserAgent] Symbol searched: {symbol}")
-            return True
+            el = self.page.locator(selector).first
+            el.wait_for(timeout=timeout)
+            return (el.text_content() or "").strip()
         except Exception as e:
-            log.warning(f"[BrowserAgent] search_symbol failed: {e}")
-            self._save_error("search_symbol_failed")
+            log.warning(f"[BrowserController] get_text failed '{selector}': {e}")
+            return ""
+
+    def get_attribute(self, selector: str, attr: str, timeout: int = 5000) -> str:
+        try:
+            el = self.page.locator(selector).first
+            el.wait_for(timeout=timeout)
+            return el.get_attribute(attr) or ""
+        except Exception as e:
+            log.warning(f"[BrowserController] get_attribute failed '{selector}': {e}")
+            return ""
+
+    def element_exists(self, selector: str, timeout: int = 3000) -> bool:
+        try:
+            self.page.locator(selector).first.wait_for(timeout=timeout)
+            return True
+        except Exception:
             return False
 
-    def change_timeframe(self, timeframe: str = "15") -> bool:
-        """TradingView-এর রিলায়েবল কিবোর্ড শর্টকাট দিয়ে timeframe পরিবর্তন করো।"""
-        try:
-            # চার্ট এরিয়ার বডিতে ক্লিক করে ফোকাস নিশ্চিত করা
-            self.page.click("body")
-            time.sleep(0.5)
-            
-            # সরাসরি টাইমফ্রেমের সংখ্যাটি টাইপ করা (যেমন: 15)
-            self.page.keyboard.type(timeframe, delay=100)
-            time.sleep(1)
-            
-            # Enter প্রেস করে টাইমফ্রেম অ্যাপ্লাই করা
-            self.page.keyboard.press("Enter")
-            time.sleep(3)  # চার্ট লোড হওয়ার জন্য একটু সময় দেওয়া
-            
-            log.info(f"[BrowserAgent] Timeframe changed via Keyboard -> {timeframe}")
-            return True
-        except Exception as e:
-            log.warning(f"[BrowserAgent] change_timeframe failed: {e}")
-            self._save_error(f"timeframe_failed_{timeframe}")
-            return False
+    def current_url(self) -> str:
+        return self.page.url if self.page else ""
+
+    def current_title(self) -> str:
+        return self.page.title() if self.page else ""
 
     def screenshot(self, path: str = "browser_screen.png") -> str:
         self.page.screenshot(path=path)
         return path
 
     # ═══════════════════════════════════════════════════════
-    # DAY 45 — STEP 8 TEST  ⭐
+    # 4. RETRY + RECOVERY SYSTEM  ⭐⭐⭐⭐⭐
     # ═══════════════════════════════════════════════════════
 
-    def run_tradingview_test(self, symbol: str = "EURUSD", timeframe: str = "15") -> dict:
+    def with_retry_recovery(self, action_fn, action_name: str,
+                             max_retries: int = 2, wait_seconds: int = 5) -> bool:
         """
-        Day 45 doc-এর শেষ test:
-          1. Browser open
-          2. TradingView open
-          3. Symbol search (= chart select)
-          4. Timeframe change
+        doc-এর flow হুবহু:
+            action failed → wait N sec → reload → try again → ... → alert
 
-        Returns dict matching doc-এর expected output format।
+        Returns True on success, False after exhausting retries (alert
+        log করে এবং error screenshot save করে)।
         """
-        steps = {}
+        last_error = None
+        for attempt in range(1, max_retries + 2):
+            try:
+                action_fn()
+                self.log_activity(action_name, "SUCCESS")
+                return True
+            except Exception as e:
+                last_error = e
+                log.warning(f"[BrowserController] '{action_name}' failed (attempt {attempt}): {e}")
+                self.log_activity(action_name, "RETRY", error=str(e))
+                if attempt <= max_retries:
+                    time.sleep(wait_seconds)
+                    try:
+                        self.page.reload(wait_until="domcontentloaded", timeout=15000)
+                        time.sleep(2)
+                    except Exception as reload_err:
+                        log.warning(f"[BrowserController] reload failed: {reload_err}")
 
-        steps["browser_started"] = self.start()
-        if not steps["browser_started"]:
-            return self._test_result(steps, success=False)
+        self._alert(action_name, last_error)
+        self.log_activity(action_name, "FAILED", error=str(last_error))
+        return False
 
-        steps["tradingview_opened"] = self.open_tradingview(symbol)
-        steps["symbol_loaded"] = self.search_symbol(symbol) if steps["tradingview_opened"] else False
-        steps["timeframe_selected"] = self.change_timeframe(timeframe) if steps["symbol_loaded"] else False
-
-        success = all(steps.values())
-        return self._test_result(steps, success=success, symbol=symbol, timeframe=timeframe)
-
-    def _test_result(self, steps: dict, success: bool, symbol: str = "", timeframe: str = "") -> dict:
-        result = {"success": success, "steps": steps, "symbol": symbol, "timeframe": timeframe}
-        self.print_test_summary(result)
-        return result
-
-    def print_test_summary(self, result: dict) -> None:
-        print("\n🤖 Computer Agent\n")
-        labels = {
-            "browser_started": "Browser opened",
-            "tradingview_opened": "TradingView opened",
-            "symbol_loaded": f"{result.get('symbol', '')} loaded",
-            "timeframe_selected": (
-                f"M{result.get('timeframe', '')} selected" if result.get("timeframe") else "Timeframe selected"
-            ),
-        }
-        for key, label in labels.items():
-            ok = result["steps"].get(key, False)
-            print(f"{label} {'✅' if ok else '❌'}")
-        print()
-
-    # ═══════════════════════════════════════════════════════
-    # ERROR HANDLING + SAFETY
-    # ═══════════════════════════════════════════════════════
-
-    def _save_error(self, tag: str) -> None:
-        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        path = os.path.join(self.error_dir, f"{ts}_{tag}.png")
+    def _alert(self, action_name: str, error: Exception) -> None:
+        """এখন শুধু critical log + error screenshot — পরে email/Telegram
+        alert hook এখানে যোগ করা যাবে।"""
+        log.error(f"[BrowserController] 🚨 ALERT — '{action_name}' permanently failed: {error}")
         try:
-            if self.page:
-                self.page.screenshot(path=path)
-                log.error(f"[BrowserAgent] ❌ ERROR — {tag} | screenshot={path}")
-        except Exception as e:
-            log.error(f"[BrowserAgent] Could not save error screenshot: {e}")
+            self.screenshot(os.path.join(DEFAULT_ERROR_DIR, f"{action_name}_failed.png"))
+        except Exception:
+            pass
 
-    def _safety_approved(self, action: str, safety_context: dict) -> bool:
-        if not self.safety:
-            return True
-        ctx = dict(safety_context or {})
-        ctx.setdefault("action", action)
-        ctx.setdefault("active_window", "Browser (TradingView)")
-        decision = self.safety.check_before_click(ctx)
-        if not decision["approved"]:
-            self._save_error(f"safety_blocked_{action}")
-        return decision["approved"]
+    # ═══════════════════════════════════════════════════════
+    # 5. ACTIVITY LOG  ⭐⭐⭐⭐
+    # ═══════════════════════════════════════════════════════
+
+    def log_activity(self, action: str, result: str, error: str = None) -> None:
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "action": action,
+            "result": result,
+            "error": error,
+        }
+        try:
+            with open(self.activity_log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except Exception as e:
+            log.warning(f"[BrowserController] Could not write activity log: {e}")
+
+        icon = {"SUCCESS": "✅", "RETRY": "🔄", "FAILED": "❌"}.get(result, "•")
+        log.info(f"[Activity] {icon} {action} -> {result}" + (f" | {error}" if error else ""))
+
+    def get_activity_log(self, limit: int = 50) -> list:
+        """পরে AI/human যাতে বুঝতে পারে কোথায় কোথায় সমস্যা হয়েছিল।"""
+        if not os.path.exists(self.activity_log_path):
+            return []
+        with open(self.activity_log_path, encoding="utf-8") as f:
+            lines = [json.loads(l) for l in f if l.strip()]
+        return lines[-limit:]
+
+    def print_activity_log(self, limit: int = 20) -> None:
+        bar = "═" * 60
+        print(f"\n{bar}")
+        print("  📜  BROWSER ACTIVITY LOG  (Day 46)")
+        print(bar)
+        for entry in self.get_activity_log(limit):
+            icon = {"SUCCESS": "✅", "RETRY": "🔄", "FAILED": "❌"}.get(entry["result"], "•")
+            line = f"  {entry['timestamp']}  {icon}  {entry['action']:<28} {entry['result']}"
+            if entry.get("error"):
+                line += f"  | {entry['error'][:40]}"
+            print(line)
+        print(bar + "\n")

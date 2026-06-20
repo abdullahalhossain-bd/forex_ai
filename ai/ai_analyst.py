@@ -1,5 +1,10 @@
 # ai/ai_analyst.py  —  Day 10 | LLM Analyst Brain
 # Primary: Groq (fast)  |  Fallback: Gemini Flash
+#
+# Day 37: GROQ_MODEL / GEMINI_MODEL are now read from .env (with the
+# original hardcoded values as defaults), so you can swap reasoning models
+# without touching code — e.g. drop in a bigger Groq model or a different
+# Gemini tier for trade reasoning.
 
 import os
 import json
@@ -20,8 +25,8 @@ class AIAnalyst:
         Technical data → Context builder → LLM → JSON report
     """
 
-    GROQ_MODEL   = "llama-3.3-70b-versatile"
-    GEMINI_MODEL = "gemini-2.0-flash"
+    GROQ_MODEL   = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
     def __init__(self):
         self._groq_client   = None
@@ -35,7 +40,7 @@ class AIAnalyst:
             try:
                 from groq import Groq
                 self._groq_client = Groq(api_key=groq_key)
-                log.info("Groq client initialized")
+                log.info(f"Groq client initialized | model={self.GROQ_MODEL}")
             except Exception as e:
                 log.warning(f"Groq init failed: {e}")
 
@@ -46,7 +51,7 @@ class AIAnalyst:
                 import google.generativeai as genai
                 genai.configure(api_key=gemini_key)
                 self._gemini_model = genai.GenerativeModel(self.GEMINI_MODEL)
-                log.info("Gemini client initialized (fallback ready)")
+                log.info(f"Gemini client initialized (fallback ready) | model={self.GEMINI_MODEL}")
             except Exception as e:
                 log.warning(f"Gemini init failed: {e}")
 

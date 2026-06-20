@@ -1,4 +1,22 @@
-# core/trader.py  —  Day 21 | Week 3 Integrated Autonomous System
+# core/trader.py  —  Day 37 | Full Integration (Week 3 + Day 31 + Day 36 wired in)
+#
+# Changes vs the Day 21 version:
+#   - AITrader now routes every order through ExecutionRouter (paper / mt5_demo)
+#     instead of calling PaperTrader directly, so EXECUTION_MODE in .env
+#     actually switches backends without touching this file again.
+#   - CircuitBreaker (kill switch) and ApprovalMode (Mode 1/2/3 human approval)
+#     are real gates in run_cycle() now, not just standalone unused modules.
+#   - CorrelationFilter is folded into the Safety Guard step alongside the
+#     existing TradePermission checks (news/confidence/session/duplicate).
+#   - AutonomousTraderSystem can pull its per-cycle pair list from
+#     MarketScanner instead of a fixed SYMBOLS list (falls back safely if
+#     the MT5 market-data adapter isn't wired yet).
+#   - CircuitBreaker + ApprovalMode are created ONCE in AutonomousTraderSystem
+#     and shared across every symbol's AITrader — both persist to a single
+#     global state file (memory/circuit_breaker_state.json,
+#     memory/pending_approvals.json), so per-symbol instances would silently
+#     stomp on each other's state. Standalone AITrader usage still works:
+#     if you don't pass one in, it creates its own.
 
 import asyncio
 import json
@@ -12,13 +30,18 @@ from agents.analysis_agent import AnalysisAgent
 from agents.decision_agent import DecisionAgent
 from agents.learning_agent import LearningAgent
 from agents.market_agent import MarketAgent
+from config import EXECUTION_MODE
+from core.approval_mode import ApprovalMode
 from database.db import TraderDB
+from execution.execution_router import ExecutionRouter
 from execution.paper_trader import PaperTrader
 from memory.history import AnalysisHistory
 from memory.learning import LearningEngine
 from memory.trade_memory import TradeMemory
+from risk.circuit_breaker import CircuitBreaker
 from risk.risk_engine import RiskEngine
 from risk.trade_permission import TradePermission
+from scanner.correlation_filter import CorrelationFilter
 from utils.logger import get_logger
 from utils.session import SessionAnalyzer
 from visualization.chart import ChartEngine
@@ -36,6 +59,11 @@ try:
 except Exception:
     AdvancedMistakeAnalyzer = None
 
+try:
+    from scanner.market_scanner import MarketScanner
+except Exception:
+    MarketScanner = None
+
 log = get_logger("ai_trader")
 
 
@@ -51,11 +79,16 @@ class AITrader:
         seed_rules: bool = True,
         paper_balance: float = 10000.0,
         notifier=None,
+        execution_mode: str = None,
+        approval_mode: int = 3,
+        circuit_breaker: CircuitBreaker = None,
+        approval: ApprovalMode = None,
     ):
         self.balance = balance
         self.symbol = self._clean_symbol(symbol)
         self.timeframe = timeframe
         self.notifier = notifier
+        self.execution_mode = (execution_mode or EXECUTION_MODE).lower()
         self._last_decision_candle = None
 
         self._market = MarketAgent(self.symbol, timeframe)
@@ -70,8 +103,21 @@ class AITrader:
         self._paper = PaperTrader(starting_balance=paper_balance, db=self._db)
         self._mistake_analyzer = AdvancedMistakeAnalyzer() if AdvancedMistakeAnalyzer else None
 
+        # Day 37 wiring — execution router shares THIS instance's PaperTrader
+        # so paper-mode balance never drifts between router and trader.
+        self._router = ExecutionRouter(
+            mode=self.execution_mode, db=self._db, paper_trader=self._paper
+        )
+        # Circuit breaker / approval mode are global state (single JSON file
+        # each) — accept a shared instance from AutonomousTraderSystem, or
+        # make a private one if this AITrader is used standalone.
+        self._circuit_breaker = circuit_breaker or CircuitBreaker(balance=balance)
+        self._approval = approval or ApprovalMode(mode=approval_mode)
+        self._corr_filter = CorrelationFilter()
+
         log.info(
             f"AITrader {self.VERSION} | {self.symbol} {timeframe} | "
+            f"Mode: {self.execution_mode.upper()} | Approval: {self._approval.mode_name} | "
             f"Risk Balance: ${balance} | Paper Balance: ${self._paper.balance}"
         )
 
@@ -87,7 +133,7 @@ class AITrader:
         session_ctx = SessionAnalyzer().get_current_session()
         latest_price = None
 
-        log.info("[1/7] Market Agent...")
+        log.info("[1/9] Market Agent...")
         market_out = self._market.run()
         if "error" in market_out:
             return self._error_result(f"Market Agent: {market_out['error']}")
@@ -100,6 +146,24 @@ class AITrader:
         if auto_paper_trade and latest_price:
             closed_now = self._paper.update_price(self.symbol, latest_price)
         closed_processed = self._process_closed_trades(closed_now)
+
+        # [2/9] Circuit Breaker Gate — existing positions above still get
+        # monitored (SL/TP/timeout) even while tripped; only NEW entries block.
+        log.info("[2/9] Circuit Breaker Gate...")
+        self._circuit_breaker.reset_daily()
+        cb_check = self._circuit_breaker.allow_trade()
+        if not cb_check["allowed"]:
+            log.warning(f"[CircuitBreaker] {cb_check['mode']} — {cb_check['reason']}")
+            result = self._monitor_only_result(
+                price=latest_price,
+                candle_time=candle_time,
+                session_ctx=session_ctx,
+                elapsed=round(time.time() - t0, 1),
+                closed_trades=closed_processed,
+            )
+            result["reject_reason"] = f"Circuit breaker [{cb_check['mode']}]: {cb_check['reason']}"
+            self._print_final(result)
+            return result
 
         if candle_time and candle_time == self._last_decision_candle:
             result = self._monitor_only_result(
@@ -114,7 +178,7 @@ class AITrader:
 
         self._last_decision_candle = candle_time
 
-        log.info("[2/7] Analysis Agent...")
+        log.info("[3/9] Analysis Agent...")
         analysis_out = self._analysis.run(market_out)
         if "error" in analysis_out:
             return self._error_result(f"Analysis Agent: {analysis_out['error']}")
@@ -144,7 +208,7 @@ class AITrader:
             }
         )
 
-        log.info("[3/7] Decision Agent...")
+        log.info("[4/9] Decision Agent...")
         entry = analysis_out["signal"].get("entry") or ind.get("close", 0)
         placeholder_risk = {
             "approved": analysis_out["final_signal"] in ("BUY", "SELL"),
@@ -157,7 +221,7 @@ class AITrader:
         dec_out = self._decision.decide(market_out, analysis_out, placeholder_risk)
         self._decision.print_summary(dec_out)
 
-        log.info("[4/7] Risk Engine...")
+        log.info("[5/9] Risk Engine...")
         risk_out = self._risk.evaluate(
             signal=dec_out["decision"],
             entry=entry,
@@ -173,7 +237,7 @@ class AITrader:
             f"Limit left: {daily['limit_remaining_pc']}%"
         )
 
-        log.info("[5/7] Trade Permission Gate...")
+        log.info("[6/9] Safety Guard (Permission + Correlation)...")
         perm_out = self._perm.check(
             decision_out=dec_out,
             risk_out=risk_out,
@@ -191,9 +255,32 @@ class AITrader:
                     "detail": f"{self.symbol} {dec_out.get('decision')} already open",
                 }
             )
+
+        # Correlation check — same underlying-risk group already has an open
+        # position (e.g. EURUSD BUY blocks a fresh GBPUSD BUY). Lot size, SL
+        # distance, and daily loss are already enforced inside RiskEngine
+        # above; news/confidence/session/duplicate are TradePermission above;
+        # this is the last piece of the Day 37 "Safety Guard" checklist.
+        if perm_out["allowed"]:
+            open_pairs = [t.get("pair") for t in self._paper.get_open_positions()]
+            self._corr_filter.sync_open(open_pairs)
+            still_allowed = self._corr_filter.allow(
+                [{"symbol": self.symbol, "signal": perm_out["final_action"]}]
+            )
+            if not still_allowed:
+                perm_out["allowed"] = False
+                perm_out["final_action"] = "NO TRADE"
+                perm_out["checks"].append(
+                    {
+                        "check": "Correlation filter",
+                        "passed": False,
+                        "detail": "Correlated pair group already has an open position",
+                    }
+                )
+
         self._perm.print_summary(perm_out)
 
-        log.info("[6/7] Learning Agent...")
+        log.info("[7/9] Learning Agent...")
         self._learn.save_decision(dec_out, analysis_out, market_out)
         stats = self._learn.get_performance_stats()
 
@@ -220,15 +307,58 @@ class AITrader:
 
         result["memory_context"] = vec_ctx
         result["pattern_context"] = pat_ctx
+        result["approval_mode"] = self._approval.mode_name
 
-        log.info("[7/7] Execution + Alerts...")
+        log.info("[8/9] Approval Gate...")
+        approved_to_execute = False
         if auto_paper_trade and result["trade_allowed"]:
-            paper_trade = self._paper.open_trade_from_signal(result)
-            if paper_trade:
-                result["paper_trade_id"] = paper_trade["id"]
+            approval_out = self._approval.process(
+                {
+                    "symbol": self.symbol,
+                    "final_action": result["final_action"],
+                    "confidence": result["confidence"],
+                    "entry": result["entry"],
+                    "sl": result["sl"],
+                    "tp": result["tp"],
+                    "lot": result["lot"],
+                    "rr": result["rr"],
+                    "llm_analysis": result.get("llm_analysis", ""),
+                }
+            )
+            approved_to_execute = approval_out["proceed"]
+
+            if approval_out["action"] == "WAIT_APPROVAL":
+                result["pending_approval_id"] = approval_out.get("pending_id")
+                # ApprovalMode.process() builds the human-readable summary but
+                # can't safely send it itself (its telegram_bot.send_message()
+                # call would be an un-awaited coroutine) — send it the same
+                # async-safe way every other Telegram alert goes out below.
+                if self.notifier:
+                    self._run_async(self.notifier.send_message(approval_out["message"]))
+
+            if not approved_to_execute:
+                result["reject_reason"] = approval_out.get("message", result.get("reject_reason"))
+
+        log.info("[9/9] Execution + Alerts...")
+        if approved_to_execute:
+            trade = self._router.execute(
+                {
+                    "decision": result["final_action"],
+                    "symbol": self.symbol,
+                    "entry": result["entry"],
+                    "sl": result["sl"],
+                    "tp": result["tp"],
+                    "lot": result["lot"],
+                    "confidence": result["confidence"],
+                    "rr": result["rr"],
+                    "timeframe": self.timeframe,
+                }
+            )
+            if trade:
+                result["paper_trade_id"] = trade.get("id")
                 result["paper_balance"] = self._paper.balance
                 self._risk.record_trade_open(self.symbol)
-                self._notify_trade_open(paper_trade, result, dec_out)
+                self._notify_trade_open(trade, result, dec_out)
 
         if show_chart:
             ChartEngine(self.symbol, self.timeframe).create_full_chart(
@@ -259,6 +389,7 @@ class AITrader:
     def close_trade(self, trade_id: int, result: str, pnl: float):
         self._memory.on_trade_closed(trade_id, result, pnl)
         self._risk.record_trade_close(self.symbol, pnl)
+        self._circuit_breaker.record_result(result, pnl)
         log.info(f"Trade #{trade_id} closed: {result} | PnL: ${pnl}")
 
     def get_paper_dashboard(self) -> dict:
@@ -286,6 +417,8 @@ class AITrader:
             trade["rr_ratio"] = rr_ratio
 
             self._risk.record_trade_close(trade["pair"], trade["pnl"])
+            self._circuit_breaker.record_result(trade["result"], trade["pnl"])
+
             if memory_trade_id:
                 try:
                     self._memory.on_trade_closed(memory_trade_id, trade["result"], trade["pnl"])
@@ -345,6 +478,7 @@ class AITrader:
             "decision_candle": candle_time,
             "closed_trades": closed_trades,
             "monitor_only": True,
+            "approval_mode": self._approval.mode_name,
         }
 
     def _build_result(
@@ -418,6 +552,7 @@ class AITrader:
         log.info(bar)
         log.info(f"  {icon}  AI TRADER FINAL REPORT — {r['symbol']}")
         log.info(bar)
+        log.info(f"  Engine       : {self.execution_mode.upper()} | Approval: {r.get('approval_mode', 'N/A')}")
         log.info(f"  Price        : {r['price']}  |  Session: {r.get('session')}")
         if r.get("decision_candle"):
             log.info(f"  Candle       : {r['decision_candle']}")
@@ -431,17 +566,18 @@ class AITrader:
             log.info(f"  DECISION     : {r['decision']} ({r['confidence']}%)")
             log.info("  ──")
 
-            if r["trade_allowed"]:
+            if r.get("paper_trade_id"):
                 log.info(f"  FINAL ACTION : {r['final_action']}")
                 log.info(f"  Entry: {r['entry']} | SL: {r['sl']} | TP: {r['tp']}")
                 log.info(f"  Lot: {r['lot']} | R:R 1:{r['rr']} | Risk: ${r['risk_usd']}")
                 if r.get("trade_id"):
                     log.info(f"  Trade ID     : #{r['trade_id']}")
-                if r.get("paper_trade_id"):
-                    log.info(
-                        f"  Paper Trade  : #{r['paper_trade_id']}  |  "
-                        f"Paper Balance: ${r.get('paper_balance')}"
-                    )
+                log.info(
+                    f"  Paper Trade  : #{r['paper_trade_id']}  |  "
+                    f"Paper Balance: ${r.get('paper_balance')}"
+                )
+            elif r["trade_allowed"]:
+                log.info(f"  FINAL ACTION : {r['final_action']} (not executed — {r.get('reject_reason', 'pending approval')})")
             else:
                 log.info(f"  FINAL ACTION : NO TRADE — {r['reject_reason']}")
 
@@ -532,16 +668,20 @@ class AITrader:
             quality = "LOW"
         return {"quality": quality}
 
-    def _notify_trade_open(self, paper_trade: dict, result: dict, dec_out: dict) -> None:
+    def _notify_trade_open(self, trade: dict, result: dict, dec_out: dict) -> None:
+        """Builds the Telegram payload from `result`, not `trade` — `trade`'s
+        shape differs between paper mode (full PaperTrader record) and MT5
+        demo mode (still a `PENDING_EXECUTOR` stub), but `result` always has
+        symbol/final_action/entry/sl/tp/lot regardless of backend."""
         if not self.notifier:
             return
         payload = {
-            "pair": paper_trade.get("pair"),
-            "signal": paper_trade.get("type"),
-            "entry": paper_trade.get("entry"),
-            "sl": paper_trade.get("sl"),
-            "tp": paper_trade.get("tp"),
-            "lot": paper_trade.get("lot"),
+            "pair": result.get("symbol"),
+            "signal": result.get("final_action"),
+            "entry": result.get("entry"),
+            "sl": result.get("sl"),
+            "tp": result.get("tp"),
+            "lot": result.get("lot"),
         }
         self._run_async(
             self.notifier.notify_trade_open(
@@ -595,6 +735,9 @@ class AutonomousTraderSystem:
         cooldown_minutes: int = 5,
         max_cycles: int | None = None,
         enable_telegram: bool = True,
+        use_scanner: bool = False,
+        execution_mode: str = None,
+        approval_mode: int = 3,
     ):
         self.symbols = [self._clean_symbol(s) for s in (symbols or ["EURUSD", "GBPUSD", "USDJPY"])]
         self.timeframe = timeframe
@@ -603,6 +746,9 @@ class AutonomousTraderSystem:
         self.backup_interval_minutes = max(5, backup_interval_minutes)
         self.cooldown_minutes = max(1, cooldown_minutes)
         self.max_cycles = max_cycles
+        self.use_scanner = use_scanner
+        self.execution_mode = (execution_mode or EXECUTION_MODE).lower()
+        self.approval_mode = approval_mode
         self._stop_requested = False
         self._pause_until = None
         self._consecutive_error_cycles = 0
@@ -610,18 +756,37 @@ class AutonomousTraderSystem:
         self._last_backup = None
         self._last_results: list[dict] = []
 
+        # Day 36/37 — Market Scanner picks the day's Top-N tradeable pairs
+        # each cycle instead of always scanning a fixed list. It needs a
+        # market_data_manager (MT5 tick/candle bundle) to actually rank
+        # pairs; that adapter isn't built yet, so until it is,
+        # _select_cycle_symbols() below safely falls back to self.symbols.
+        self.scanner = MarketScanner(risk_engine=None) if (use_scanner and MarketScanner) else None
+
+        # Circuit breaker + approval mode are global state (one shared JSON
+        # file each) — created ONCE here and handed to every symbol's
+        # AITrader so they don't overwrite each other's state.
+        self.circuit_breaker = CircuitBreaker(balance=balance)
+        self.approval = ApprovalMode(mode=approval_mode)
+
         self.notifier = TelegramNotifier() if enable_telegram and TelegramNotifier else None
-        self.traders = {
-            symbol: AITrader(
-                balance=balance,
-                symbol=symbol,
-                timeframe=timeframe,
-                paper_balance=balance,
-                notifier=self.notifier,
-            )
-            for symbol in self.symbols
+        self.traders: dict[str, AITrader] = {
+            symbol: self._build_trader(symbol) for symbol in self.symbols
         }
         self._sync_risk_state()
+
+    def _build_trader(self, symbol: str) -> AITrader:
+        return AITrader(
+            balance=self.balance,
+            symbol=symbol,
+            timeframe=self.timeframe,
+            paper_balance=self.balance,
+            notifier=self.notifier,
+            execution_mode=self.execution_mode,
+            approval_mode=self.approval_mode,
+            circuit_breaker=self.circuit_breaker,
+            approval=self.approval,
+        )
 
     def run(self) -> dict:
         self._start_telegram_commands()
@@ -630,7 +795,8 @@ class AutonomousTraderSystem:
 
         log.info(
             f"[System] Starting autonomous loop | Pairs={self.symbols} | "
-            f"Timeframe={self.timeframe} | Balance=${self.balance}"
+            f"Timeframe={self.timeframe} | Mode={self.execution_mode.upper()} | "
+            f"Scanner={'ON' if self.use_scanner else 'OFF'} | Balance=${self.balance}"
         )
 
         try:
@@ -646,8 +812,10 @@ class AutonomousTraderSystem:
 
                 cycle_results = []
                 cycle_errors = []
+                active_symbols = self._select_cycle_symbols()
 
-                for symbol, trader in self.traders.items():
+                for symbol in active_symbols:
+                    trader = self.traders.get(symbol) or self._spawn_trader(symbol)
                     try:
                         if self._manual_pause_active():
                             closed = trader.monitor_open_trades()
@@ -693,6 +861,26 @@ class AutonomousTraderSystem:
     def stop(self) -> None:
         self._stop_requested = True
 
+    def _select_cycle_symbols(self) -> list[str]:
+        """Scanner-driven Top-N pairs when enabled and wired up; the static
+        symbol list otherwise (or on any scanner failure)."""
+        if not self.use_scanner or not self.scanner:
+            return self.symbols
+        try:
+            ranked = self.scanner.scan()
+            top = self.scanner.get_top_opportunities(ranked)
+            scanned = [opp["symbol"] for opp in top]
+            return scanned or self.symbols
+        except Exception as e:
+            log.warning(f"[System] Scanner failed, falling back to static symbols: {e}")
+            return self.symbols
+
+    def _spawn_trader(self, symbol: str) -> AITrader:
+        symbol = self._clean_symbol(symbol)
+        trader = self._build_trader(symbol)
+        self.traders[symbol] = trader
+        return trader
+
     def backup_state(self, force: bool = False) -> Path | None:
         now = datetime.now(timezone.utc)
         if not force and self._last_backup:
@@ -710,6 +898,8 @@ class AutonomousTraderSystem:
             "memory/trade_memory.json",
             "memory/daily_risk.json",
             "memory/analysis_history.json",
+            "memory/circuit_breaker_state.json",
+            "memory/pending_approvals.json",
         ]:
             src = Path(relative_path)
             if src.exists():
@@ -820,11 +1010,14 @@ class AutonomousTraderSystem:
 
         return {
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "mode": "PAPER_TRADING",
+            "mode": self.execution_mode.upper(),
+            "scanner": "ON" if self.use_scanner else "OFF",
             "pairs": self.symbols,
+            "active_pairs": list(self.traders.keys()),
             "timeframe": self.timeframe,
             "balance": self.balance,
             "system_state": "PAUSED" if self._manual_pause_active() or self._is_paused() else "RUNNING",
+            "circuit_breaker": self.circuit_breaker.get_status(),
             "summary": {
                 "trades": stats.get("total", 0),
                 "wins": stats.get("wins", 0),

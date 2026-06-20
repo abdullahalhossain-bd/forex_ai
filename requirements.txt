@@ -1,7 +1,30 @@
-# forex_ai/requirements.txt
-# pip install -r requirements.txt
+# ── Core — required for `python main.py` to run ────────────────
+python-dotenv>=1.0.0
+pandas>=2.0.0
+numpy>=1.24.0
+ta>=0.11.0
+yfinance>=0.2.40
+requests>=2.31.0
+pytz>=2024.1
+beautifulsoup4>=4.12.0
 
-ccxt==4.3.31
-ta==0.11.0
-pandas==2.2.2
-playwright==1.44.0
+# ── AI reasoning (ai/ai_analyst.py — Groq primary, Gemini fallback) ──
+groq>=0.9.0
+google-generativeai>=0.7.0
+
+# ── Telegram alerts + commands (alerts/telegram_bot.py) ──────────
+python-telegram-bot>=21.0
+
+# ── Local vector memory (memory/trade_memory.py) ─────────────────
+sentence-transformers>=2.7.0
+
+# ── Optional — only needed for features NOT used by `main.py` ────
+# plotly>=5.22.0          # visualization/chart.py — only if you call run_cycle(show_chart=True)
+# flask>=3.0.0             # server/webhook_server.py — separate process, not started by main.py
+# playwright>=1.45.0       # agents/chart_agent.py — standalone browser tool, not in the live loop
+#                          #   (after pip install, also run: playwright install)
+# chromadb>=0.5.0          # memory/knowledge_store.py — superseded by trade_memory.py, currently unused
+# MetaTrader5>=5.0.45      # only if EXECUTION_MODE=mt5_demo (Windows only, needs real MT5 terminal)
+
+# ── Dev / testing ──────────────────────────────────────────────
+# pytest>=8.0.0
