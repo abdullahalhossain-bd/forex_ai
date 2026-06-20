@@ -113,7 +113,7 @@ def _apply_fib_scoring(
 # (existing logic সব রেখে শুধু fib block যোগ হয়েছে)
 # ══════════════════════════════════════════════════════════════
 
-class SignalEngineDay40Mixin:
+class SignalEngine:
     """
     Mixin — existing SignalEngine-এ যোগ করো।
 

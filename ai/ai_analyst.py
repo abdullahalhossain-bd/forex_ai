@@ -65,13 +65,16 @@ class AIAnalyst:
         signal:     dict,
         mtf_bias:   str = "NEUTRAL",
         symbol:     str = "EURUSD",
+        advanced_pat_ctx: dict = None,  # 🎯 নতুন আর্গুমেন্টটি এখানে রিসিভ করা হলো
+        **kwargs,                       # 🧠 ফিউচার-প্রুফ করার জন্য ক্যাচ-অল kwargs যোগ করা হলো
     ) -> dict:
         """
         সব technical context নিয়ে LLM analyst এর opinion নেয়।
         Returns structured dict।
         """
+        # Context builder-এ advanced_pat_ctx পাস করা হচ্ছে
         context = self._build_context(
-            ind_ctx, pat_ctx, sr_ctx, regime, signal, mtf_bias, symbol
+            ind_ctx, pat_ctx, sr_ctx, regime, signal, mtf_bias, symbol, advanced_pat_ctx
         )
         prompt  = self._build_prompt(context)
 
@@ -96,8 +99,14 @@ class AIAnalyst:
 
     # ── Context builder ────────────────────────────────────────
     def _build_context(
-        self, ind, pat, sr, regime, signal, mtf_bias, symbol
+        self, ind, pat, sr, regime, signal, mtf_bias, symbol, advanced_pat=None
     ) -> str:
+        # অ্যাডভান্সড চার্ট প্যাটার্ন প্রসেস করার লজিক
+        adv_patterns_str = "None"
+        if advanced_pat and isinstance(advanced_pat, dict):
+            # আপনার লগে যেভাবে প্রিন্ট হচ্ছিল, সেভাবে ফরম্যাট করার চেষ্টা
+            adv_patterns_str = str(advanced_pat.get('recent_patterns', advanced_pat))
+
         return f"""
 SYMBOL        : {symbol}
 TIMEFRAME     : 15M
@@ -119,6 +128,7 @@ BB Position   : {ind.get('bb_position', 'N/A')}
 
 ── PATTERNS ──
 Recent        : {pat.get('recent_patterns', [])}
+Advanced Pat  : {adv_patterns_str}  # 🎯 এআই এখন এই অ্যাডভান্সড প্যাটার্নও দেখতে পাবে
 Signal        : {pat.get('pattern_signal', 'N/A')}
 
 ── SUPPORT / RESISTANCE ──
@@ -226,18 +236,18 @@ Return ONLY valid JSON, no extra text:
     # ── Print ──────────────────────────────────────────────────
     def print_summary(self, result: dict) -> None:
         icons = {"BUY": "🟢", "SELL": "🔴", "WAIT": "🟡"}
-        icon  = icons.get(result.get("signal", "WAIT"), "🟡")
+        icon   = icons.get(result.get("signal", "WAIT"), "🟡")
         bar   = "═" * 44
 
         log.info(bar)
-        log.info(f"  {icon}  LLM ANALYST REPORT")
+        log.info(f"   {icon}  LLM ANALYST REPORT")
         log.info(bar)
-        log.info(f"  Signal      : {result.get('signal')}")
-        log.info(f"  Confidence  : {result.get('confidence')}%")
-        log.info(f"  Analysis    : {result.get('analysis', '')[:80]}")
-        log.info(f"  Reasoning   : {result.get('reasoning', '')[:100]}")
-        log.info(f"  Key risk    : {result.get('key_risk', '')}")
-        log.info(f"  Invalidation: {result.get('invalidation', '')}")
+        log.info(f"   Signal      : {result.get('signal')}")
+        log.info(f"   Confidence  : {result.get('confidence')}%")
+        log.info(f"   Analysis    : {result.get('analysis', '')[:80]}")
+        log.info(f"   Reasoning   : {result.get('reasoning', '')[:100]}")
+        log.info(f"   Key risk    : {result.get('key_risk', '')}")
+        log.info(f"   Invalidation: {result.get('invalidation', '')}")
         log.info(bar)
 
     def get_ai_context(self, result: dict) -> dict:

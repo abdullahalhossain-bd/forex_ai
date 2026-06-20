@@ -1,4 +1,4 @@
-# ── Core — required for `python main.py` to run ────────────────
+# ── Core (main app runtime) ─────────────────────────────
 python-dotenv>=1.0.0
 pandas>=2.0.0
 numpy>=1.24.0
@@ -8,23 +8,23 @@ requests>=2.31.0
 pytz>=2024.1
 beautifulsoup4>=4.12.0
 
-# ── AI reasoning (ai/ai_analyst.py — Groq primary, Gemini fallback) ──
+# ── AI / LLM layer ──────────────────────────────────────
 groq>=0.9.0
 google-generativeai>=0.7.0
 
-# ── Telegram alerts + commands (alerts/telegram_bot.py) ──────────
+# ── Telegram bot ────────────────────────────────────────
 python-telegram-bot>=21.0
 
-# ── Local vector memory (memory/trade_memory.py) ─────────────────
+# ── Local ML (lightweight fallback) ─────────────────────
+scikit-learn>=1.5.0
+scipy>=1.10.0
+
+# ── Optional embeddings (KEEP ONLY IF YOU REALLY USE IT) ─
 sentence-transformers>=2.7.0
 
-# ── Optional — only needed for features NOT used by `main.py` ────
-# plotly>=5.22.0          # visualization/chart.py — only if you call run_cycle(show_chart=True)
-# flask>=3.0.0             # server/webhook_server.py — separate process, not started by main.py
-# playwright>=1.45.0       # agents/chart_agent.py — standalone browser tool, not in the live loop
-#                          #   (after pip install, also run: playwright install)
-# chromadb>=0.5.0          # memory/knowledge_store.py — superseded by trade_memory.py, currently unused
-# MetaTrader5>=5.0.45      # only if EXECUTION_MODE=mt5_demo (Windows only, needs real MT5 terminal)
-
-# ── Dev / testing ──────────────────────────────────────────────
-# pytest>=8.0.0
+# ── Optional (uncomment if needed) ──────────────────────
+# plotly>=5.22.0
+# flask>=3.0.0
+# playwright>=1.45.0
+# chromadb>=0.5.0
+# MetaTrader5>=5.0.45

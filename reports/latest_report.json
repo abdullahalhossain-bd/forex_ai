@@ -1,7 +1,13 @@
 {
-  "generated_at": "2026-06-19T17:06:22+00:00",
-  "mode": "PAPER_TRADING",
+  "generated_at": "2026-06-20T15:52:28+00:00",
+  "mode": "PAPER",
+  "scanner": "OFF",
   "pairs": [
+    "EURUSD",
+    "GBPUSD",
+    "USDJPY"
+  ],
+  "active_pairs": [
     "EURUSD",
     "GBPUSD",
     "USDJPY"
@@ -9,6 +15,15 @@
   "timeframe": "15m",
   "balance": 10000.0,
   "system_state": "RUNNING",
+  "circuit_breaker": {
+    "mode": "TRADING",
+    "consecutive_losses": 0,
+    "recent_win_rate": 0,
+    "daily_loss_usd": 0.0,
+    "daily_loss_pct": 0.0,
+    "pause_reason": "",
+    "total_trades": 0
+  },
   "summary": {
     "trades": 0,
     "wins": 0,
@@ -26,7 +41,7 @@
       "symbol": "EURUSD",
       "timeframe": "15m",
       "version": "Week3-Day21",
-      "elapsed_sec": 0.9,
+      "elapsed_sec": 1.0,
       "price": null,
       "trend": null,
       "rsi": null,
@@ -56,16 +71,17 @@
       "reject_reason": "One decision already taken for this candle",
       "total_decisions": 0,
       "win_rate": "N/A",
-      "session": "New York",
-      "decision_candle": "2026-06-19T18:00:00",
+      "session": "London/New York",
+      "decision_candle": "2026-06-19T22:15:00",
       "closed_trades": [],
-      "monitor_only": true
+      "monitor_only": true,
+      "approval_mode": "AUTONOMOUS"
     },
     {
       "symbol": "GBPUSD",
       "timeframe": "15m",
       "version": "Week3-Day21",
-      "elapsed_sec": 0.9,
+      "elapsed_sec": 1.3,
       "price": null,
       "trend": null,
       "rsi": null,
@@ -95,16 +111,17 @@
       "reject_reason": "One decision already taken for this candle",
       "total_decisions": 0,
       "win_rate": "N/A",
-      "session": "New York",
-      "decision_candle": "2026-06-19T18:00:00",
+      "session": "London/New York",
+      "decision_candle": "2026-06-19T22:15:00",
       "closed_trades": [],
-      "monitor_only": true
+      "monitor_only": true,
+      "approval_mode": "AUTONOMOUS"
     },
     {
       "symbol": "USDJPY",
       "timeframe": "15m",
       "version": "Week3-Day21",
-      "elapsed_sec": 0.8,
+      "elapsed_sec": 2.0,
       "price": null,
       "trend": null,
       "rsi": null,
@@ -134,10 +151,11 @@
       "reject_reason": "One decision already taken for this candle",
       "total_decisions": 0,
       "win_rate": "N/A",
-      "session": "New York",
-      "decision_candle": "2026-06-19T18:00:00",
+      "session": "London/New York",
+      "decision_candle": "2026-06-19T22:15:00",
       "closed_trades": [],
-      "monitor_only": true
+      "monitor_only": true,
+      "approval_mode": "AUTONOMOUS"
     }
   ]
 }

@@ -198,15 +198,13 @@ class AITrader:
             if pat_ctx.get("warning"):
                 log.info("[Memory] Warning: similar setups produced more losses than wins")
 
-        vec_ctx = self._memory.get_vector_context(
-            {
-                "pair": self.symbol,
-                "trend": ind.get("trend"),
-                "rsi": ind.get("rsi"),
-                "pattern": pattern,
-                "regime": regime_str,
-            }
-        )
+            vec_ctx = self._memory.get_pattern_context(
+                pair=self.symbol,
+                trend=ind.get("trend"),
+                rsi=ind.get("rsi"),
+                pattern=pattern,        # এটি সরাসরি পজিশনাল আর্গুমেন্টে চলে যাবে
+                regime=regime_str,      # এটিও সরাসরি পজিশনাল আর্গুমেন্টে চলে যাবে
+            )
 
         log.info("[4/9] Decision Agent...")
         entry = analysis_out["signal"].get("entry") or ind.get("close", 0)

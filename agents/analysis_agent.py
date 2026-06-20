@@ -17,7 +17,7 @@ from analysis.advanced_patterns import AdvancedPatternDetector
 from analysis.fibonacci import FibonacciEngine
 from analysis.sentiment import SentimentEngine
 from analysis.smc_engine import SMCEngine
-from data.sentiment_data import SentimentDataProvider
+from analysis.sentiment_data import SentimentDataProvider
 from fundamental.news_filter import NewsFilter
 from ai.ai_analyst import AIAnalyst
 from agents.master_analyst import MasterAnalyst
