@@ -12540,3 +12540,19 @@ violations {
 2026-06-19 23:06:22 | INFO     | ai_trader                 |   Memory       : 0 decisions | WR: N/A%
 2026-06-19 23:06:22 | INFO     | ai_trader                 |   Completed in : 0.8s
 2026-06-19 23:06:22 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-20 15:42:26 | INFO     | computer_use.browser      | [BrowserAgent] Browser started ✅
+2026-06-20 15:42:34 | INFO     | computer_use.browser      | [BrowserAgent] Navigated -> https://www.tradingview.com/chart/?symbol=FX:EURUSD
+2026-06-20 15:42:35 | INFO     | computer_use.browser      | [BrowserAgent] TradingView loaded ✅ (EURUSD)
+2026-06-20 15:42:41 | INFO     | computer_use.browser      | [BrowserAgent] Symbol searched: EURUSD
+2026-06-20 15:42:46 | WARNING  | computer_use.browser      | [BrowserAgent] change_timeframe failed: Locator.wait_for: Timeout 5000ms exceeded.
+Call log:
+  - waiting for locator("button[data-value=\"15\"]").first to be visible
+
+2026-06-20 15:42:46 | ERROR    | computer_use.browser      | [BrowserAgent] ❌ ERROR — timeframe_failed_15 | screenshot=computer_use/errors\20260620_094246_timeframe_failed_15.png
+2026-06-20 15:42:47 | INFO     | computer_use.browser      | [BrowserAgent] Browser closed 🔴
+2026-06-20 15:52:37 | INFO     | computer_use.browser      | [BrowserAgent] Browser started ✅
+2026-06-20 15:52:46 | INFO     | computer_use.browser      | [BrowserAgent] Navigated -> https://www.tradingview.com/chart/?symbol=FX:EURUSD
+2026-06-20 15:52:47 | INFO     | computer_use.browser      | [BrowserAgent] TradingView loaded ✅ (EURUSD)
+2026-06-20 15:52:52 | INFO     | computer_use.browser      | [BrowserAgent] Symbol searched: EURUSD
+2026-06-20 15:52:57 | INFO     | computer_use.browser      | [BrowserAgent] Timeframe changed via Keyboard -> 15
+2026-06-20 15:52:58 | INFO     | computer_use.browser      | [BrowserAgent] Browser closed 🔴
