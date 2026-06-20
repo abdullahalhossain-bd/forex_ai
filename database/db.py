@@ -3,6 +3,10 @@
 # AI Trader — SQLite Database
 # CSV এর চেয়ে fast, structured, queryable
 # পরে PostgreSQL-এ migrate করা সহজ হবে
+#
+# Day 43 addition: `economic_history` table — news event + actual
+# market reaction memory, যাতে FundamentalSentimentScore module
+# পরে এই history থেকে currency bias বের করতে পারে।
 # ============================================================
 
 import sqlite3
@@ -23,10 +27,12 @@ class TraderDB:
     AI Trader-এর central database।
 
     Tables:
-        candles      — OHLCV data
-        indicators   — calculated indicator values
-        patterns     — detected patterns
-        analysis     — full AI context per run
+        candles            — OHLCV data
+        indicators         — calculated indicator values
+        patterns           — detected patterns
+        analysis           — full AI context per run
+        trades             — paper/demo trade journal
+        economic_history   — (Day 43) news event + market reaction memory
     """
 
     def __init__(self, db_path: str = DB_PATH):
@@ -119,6 +125,20 @@ class TraderDB:
                     session         TEXT,
                     status          TEXT DEFAULT 'OPEN',
                     context_json    TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS economic_history (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event           TEXT NOT NULL,
+                    currency        TEXT NOT NULL,
+                    impact          TEXT,
+                    event_time      TEXT NOT NULL,
+                    expected        TEXT,
+                    actual          TEXT,
+                    market_reaction TEXT,
+                    pips_moved      REAL,
+                    lesson          TEXT,
+                    created_at      TEXT NOT NULL
                 );
             """)
 
@@ -323,6 +343,83 @@ class TraderDB:
         }
 
     # ─────────────────────────────────────────────
+    # ECONOMIC HISTORY  (Day 43 — News Memory System)
+    # ─────────────────────────────────────────────
+
+    def save_economic_event(self, event: dict) -> int:
+        """
+        একটা economic event + (জানা থাকলে) তার actual market reaction
+        save করো। `event` dict-এর সম্ভাব্য keys:
+            event, currency, impact, event_time, expected, actual,
+            market_reaction ("BULLISH"/"BEARISH"/"NEUTRAL"), pips_moved, lesson
+        """
+        with self._connect() as conn:
+            cur = conn.execute("""
+                INSERT INTO economic_history
+                (event, currency, impact, event_time, expected, actual,
+                 market_reaction, pips_moved, lesson, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                event.get("event", ""),
+                event.get("currency", "").upper(),
+                event.get("impact", "HIGH"),
+                event.get("event_time", datetime.utcnow().isoformat()),
+                event.get("expected"),
+                event.get("actual"),
+                event.get("market_reaction"),
+                event.get("pips_moved"),
+                event.get("lesson"),
+                datetime.utcnow().isoformat(),
+            ))
+            event_id = cur.lastrowid
+        log.info(
+            f"Economic event saved: #{event_id} {event.get('currency')} "
+            f"{event.get('event')} → {event.get('market_reaction', 'unknown')}"
+        )
+        return event_id
+
+    def get_economic_history(self, currency: str = None, limit: int = 50) -> pd.DataFrame:
+        """Recent economic events (lesson/reaction সহ) দেখো — currency filter optional।"""
+        query  = "SELECT * FROM economic_history"
+        params = []
+        if currency:
+            query += " WHERE currency = ?"
+            params.append(currency.upper())
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            return pd.read_sql(query, conn, params=params)
+
+    def get_currency_fundamental_bias(self, currency: str, lookback: int = 10) -> dict:
+        """
+        একটা currency-র সাম্প্রতিক economic_history entries দেখে
+        bullish/bearish reaction count থেকে একটা সরল fundamental bias বের করে।
+        FundamentalSentimentScore module এটাকেই raw input হিসেবে ব্যবহার করবে।
+        """
+        history = self.get_economic_history(currency=currency, limit=lookback)
+        if history.empty:
+            return {
+                "currency": currency.upper(), "sample_size": 0,
+                "bullish_count": 0, "bearish_count": 0, "neutral_count": 0,
+                "raw_score": 0,
+            }
+
+        reactions = history["market_reaction"].fillna("NEUTRAL").str.upper()
+        bullish   = int((reactions == "BULLISH").sum())
+        bearish   = int((reactions == "BEARISH").sum())
+        neutral   = int((reactions == "NEUTRAL").sum())
+        raw_score = bullish - bearish   # সরল net score
+
+        return {
+            "currency":      currency.upper(),
+            "sample_size":   len(history),
+            "bullish_count": bullish,
+            "bearish_count": bearish,
+            "neutral_count": neutral,
+            "raw_score":     raw_score,
+        }
+
+    # ─────────────────────────────────────────────
     # QUERY METHODS
     # ─────────────────────────────────────────────
 
@@ -352,11 +449,11 @@ class TraderDB:
     def stats(self):
         """Database stats দেখো"""
         with self._connect() as conn:
-            for table in ['candles', 'indicators', 'patterns', 'analysis']:
+            for table in ['candles', 'indicators', 'patterns', 'analysis', 'trades', 'economic_history']:
                 count = conn.execute(
                     f"SELECT COUNT(*) FROM {table}"
                 ).fetchone()[0]
-                log.info(f"  {table:<12}: {count} rows")
+                log.info(f"  {table:<18}: {count} rows")
 
 
 def _safe(row, col):
