@@ -1,128 +1,125 @@
-import datetime
+# dashboard/app.py  —  Day 56 | AI Trading Command Center (Home)
+# ============================================================
+# এটা Day 56-এর মূল entry point। Streamlit multipage convention অনুযায়ী
+# `streamlit run dashboard/app.py` চালালে এই ফাইল হোমপেজ হিসেবে খোলে,
+# এবং dashboard/pages/ ফোল্ডারের প্রতিটা ফাইল সাইডবারে আলাদা পেজ হিসেবে
+# auto-detect হয়:
+#
+#   1_live_room.py        → 📡 Live Trading Room
+#   2_ai_brain.py          → 🧠 AI Brain Monitor
+#   3_learning_center.py   → 📚 Learning Center
+#   4_strategy_lab.py      → 🧪 Strategy Lab
+#   5_risk_monitor.py      → 🛡 Risk Monitor
+#
+# Home page নিজে দেখায়: system health snapshot, today's quick KPIs,
+# এবং Emergency Control Panel (⭐ Bonus 4) — যেটা সব পেজ থেকেই গুরুত্বপূর্ণ
+# বলে এখানে top-level রাখা হয়েছে।
+# ============================================================
 
-import numpy as np
-import pandas as pd
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import streamlit as st
+
+from components import data_loader, metrics, alerts, charts
+
+try:
+    from streamlit_autorefresh import st_autorefresh
+    AUTOREFRESH_AVAILABLE = True
+except ImportError:
+    AUTOREFRESH_AVAILABLE = False
 
 
 # =========================
 # পেজ কনফিগ
 # =========================
 st.set_page_config(
-    page_title="AI Trading Dashboard",
+    page_title="AI Trading Command Center",
+    page_icon="🧠",
     layout="wide",
 )
 
-
 # =========================
-# মক ডাটা (পরে API দিয়ে replace করা যাবে)
+# Real-time auto refresh (⭐ spec requirement)
 # =========================
-def get_live_signals() -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "Pair": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"],
-            "Signal": ["BUY", "SELL", "BUY", "BUY"],
-            "Confidence": [0.78, 0.65, 0.82, 0.74],
-            "Time": [datetime.datetime.now() for _ in range(4)],
-        }
-    )
+with st.sidebar:
+    st.markdown("### 🔄 Live Updates")
+    refresh_on = st.toggle("Auto-refresh", value=True)
+    interval = st.slider("Refresh interval (sec)", 5, 60, 15)
 
-
-def get_trade_history() -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "Pair": ["EURUSD", "GBPUSD", "XAUUSD"],
-            "Type": ["BUY", "SELL", "BUY"],
-            "Profit": [12.5, -8.2, 25.0],
-            "Date": pd.date_range(end=datetime.datetime.today(), periods=3),
-        }
-    )
-
-
-def get_metrics() -> dict:
-    return {
-        "Win Rate": "62%",
-        "Total Trades": 120,
-        "Profit Factor": 1.8,
-        "Drawdown": "9.4%",
-    }
+if refresh_on:
+    if AUTOREFRESH_AVAILABLE:
+        st_autorefresh(interval=interval * 1000, key="home_autorefresh")
+    else:
+        st.sidebar.caption("Install `streamlit-autorefresh` for live polling.")
 
 
 # =========================
-# সাইডবার নেভিগেশন
+# Header
 # =========================
-menu = st.sidebar.selectbox(
-    "📌 Menu",
-    ["Live", "Performance", "Trade History", "Analysis", "Settings"],
+st.title("🧠 AI Trading Command Center")
+st.caption("Day 56 — One place to see everything your AI Trader sees, learns, and decides.")
+
+ctrl = data_loader.get_system_control()
+status_icon = "🟢" if ctrl.get("trading_enabled") else "🔴"
+st.markdown(
+    f"**Status:** {status_icon} {'Trading Enabled' if ctrl.get('trading_enabled') else 'Trading STOPPED'}  "
+    f"&nbsp;|&nbsp; **Mode:** `{ctrl.get('mode', 'DEMO')}`",
+    unsafe_allow_html=True,
 )
 
+st.divider()
 
 # =========================
-# Live পেজ
+# Today's quick KPIs
 # =========================
-if menu == "Live":
-    st.title("📡 Live Signals & Open Trades")
+pnl = data_loader.get_todays_pnl()
+risk = data_loader.get_risk_status()
 
-    df = get_live_signals()
-    st.dataframe(df, use_container_width=True)
+kpi_cols = st.columns(4)
+kpi_cols[0].metric("Today's P/L", f"${pnl['pnl']:,.2f}")
+kpi_cols[1].metric("Win Rate Today", f"{pnl['win_rate']}%" if pnl["win_rate"] is not None else "—")
+kpi_cols[2].metric("Trades Today", pnl["trades"])
+kpi_cols[3].metric("Current Risk / Trade", f"{risk['current_risk_pct']}%")
 
-    st.subheader("🔵 Live Market Overview")
-    st.line_chart(np.random.randn(20, 4))
-
-
-# =========================
-# Performance পেজ
-# =========================
-elif menu == "Performance":
-    st.title("📊 Performance Dashboard")
-
-    metrics = get_metrics()
-
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Win Rate", metrics["Win Rate"])
-    col2.metric("Total Trades", metrics["Total Trades"])
-    col3.metric("Profit Factor", metrics["Profit Factor"])
-    col4.metric("Drawdown", metrics["Drawdown"])
-
-    st.subheader("Equity Curve")
-    st.area_chart(np.cumsum(np.random.randn(50)))
-
+st.divider()
 
 # =========================
-# Trade History পেজ
+# System Health  (⭐ Bonus 3)
 # =========================
-elif menu == "Trade History":
-    st.title("📜 Trade History")
+health = data_loader.get_system_health()
+alerts.system_health_panel(health)
 
-    df = get_trade_history()
-    st.dataframe(df, use_container_width=True)
-
-    st.subheader("Profit Distribution")
-    st.bar_chart(df["Profit"])
-
+st.divider()
 
 # =========================
-# Analysis পেজ
+# Emergency Control Panel  (⭐ Bonus 4)
 # =========================
-elif menu == "Analysis":
-    st.title("📈 Market Analysis")
+alerts.emergency_control_panel()
 
-    st.write("AI-based market overview (replace with your model output)")
-
-    st.success("Trend: Bullish (EURUSD, XAUUSD)")
-    st.warning("Risk: Medium volatility expected")
-
-    st.line_chart(np.random.randn(100, 3))
-
+st.divider()
 
 # =========================
-# Settings পেজ
+# Pending approvals banner (Day 55 human-approval-mode bridge)
 # =========================
-elif menu == "Settings":
-    st.title("⚙️ Risk Settings")
+pending = data_loader.get_pending_optimizer_suggestions()
+alerts.pending_approvals_alert(pending)
 
-    risk = st.slider("Risk per trade (%)", 0.1, 5.0, 1.0)
-    leverage = st.selectbox("Leverage", [10, 20, 50, 100, 200])
+st.divider()
 
-    st.write("Selected Risk:", risk, "%")
-    st.write("Selected Leverage:", leverage)
+# =========================
+# Navigation cards
+# =========================
+st.markdown("### 🧭 Go to")
+nav_cols = st.columns(5)
+nav_cols[0].page_link("pages/1_live_room.py", label="📡 Live Trading Room")
+nav_cols[1].page_link("pages/2_ai_brain.py", label="🧠 AI Brain Monitor")
+nav_cols[2].page_link("pages/3_learning_center.py", label="📚 Learning Center")
+nav_cols[3].page_link("pages/4_strategy_lab.py", label="🧪 Strategy Lab")
+nav_cols[4].page_link("pages/5_risk_monitor.py", label="🛡 Risk Monitor")
+
+st.divider()
+st.markdown("### 📈 Equity Snapshot")
+charts.equity_curve_chart(data_loader.get_equity_curve())
