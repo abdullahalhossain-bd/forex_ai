@@ -1,14 +1,20 @@
-# agents/analysis_agent.py
+# agents/analysis_agent.py  (Day 47 Vision Update)
 # ============================================================
-# Day 44 Unified Pipeline Update
-# Features: Technical + Advanced Patterns + Fibonacci + Sentiment + SMC + News + MasterAnalyst
+# Day 44 pipeline-এর সাথে Day 47 Vision Layer যোগ হয়েছে।
+#
+# নতুন:
+#   Step 12: ChartReader (Vision AI)
+#   Step 13: Vision + Quant Fusion
+#
+# Vision inject হয় MasterAnalyst-এর আগে,
+# তাই Master সব context পায় — visual + quant।
 # ============================================================
 
 from analysis.patterns import PatternDetector
 from analysis.support_resistance import SupportResistance
 from analysis.market_bias import MarketBiasEngine
-from analysis.advanced_patterns import AdvancedPatternDetector   # Advanced Patterns
-from analysis.fibonacci import FibonacciEngine                   # Fibonacci Engine
+from analysis.advanced_patterns import AdvancedPatternDetector
+from analysis.fibonacci import FibonacciEngine
 from analysis.sentiment import SentimentEngine
 from analysis.smc_engine import SMCEngine
 from data.sentiment_data import SentimentDataProvider
@@ -23,10 +29,17 @@ log = get_logger("analysis_agent")
 
 class AnalysisAgent:
     """
-    Unified Production Pipeline:
-      Patterns -> S/R -> Advanced Patterns -> Fibonacci -> Bias -> Signal 
-      -> Sentiment -> SMC -> News -> Classic LLM -> MasterAnalyst Brain
+    Day 47 Unified Pipeline:
+      Patterns -> S/R -> Advanced Patterns -> Fibonacci -> Bias -> Signal
+      -> Sentiment -> SMC -> News -> Classic LLM -> Vision AI -> MasterAnalyst
     """
+
+    def __init__(self, chart_reader=None):
+        """
+        chart_reader: ChartReader instance (Day 47 vision)
+        None দিলে vision skip হবে (backward compatible)।
+        """
+        self.chart_reader = chart_reader
 
     def run(self, market_output: dict, memory_ctx: dict = None) -> dict:
         if "error" in market_output:
@@ -40,8 +53,8 @@ class AnalysisAgent:
         timeframe = market_output.get("timeframe", "15m")
 
         log.info(
-            f"[AnalysisAgent] Running complete pipeline for {symbol} ({timeframe}) — "
-            "Technical + Advanced Patterns + Fib + Sentiment + SMC + News + MasterAnalyst"
+            f"[AnalysisAgent] Running Day 47 pipeline for {symbol} ({timeframe}) — "
+            "Technical + Advanced + Fib + Sentiment + SMC + News + Vision + MasterAnalyst"
         )
 
         # ── 1. Candlestick Patterns ───────────────────────────
@@ -83,7 +96,7 @@ class AnalysisAgent:
                 pat_ctx    = pat_ctx,
             )
         except Exception as e:
-            log.warning(f"[AnalysisAgent] Advanced Patterns error (non-critical): {e}")
+            log.warning(f"[AnalysisAgent] Advanced Patterns error: {e}")
 
         # ── 4. Fibonacci Engine ──────────────────────────────
         fib_ctx    = {}
@@ -94,7 +107,7 @@ class AnalysisAgent:
             fib_engine.print_summary(fib_result)
             fib_ctx    = fib_engine.get_ai_context(fib_result)
         except Exception as e:
-            log.warning(f"[AnalysisAgent] Fibonacci Engine error (non-critical): {e}")
+            log.warning(f"[AnalysisAgent] Fibonacci Engine error: {e}")
 
         # ── 5. Market Bias ────────────────────────────────────
         bias_engine = MarketBiasEngine()
@@ -110,13 +123,13 @@ class AnalysisAgent:
             sr_ctx           = sr_ctx,
             regime           = regime,
             mtf_bias         = mtf_bias,
-            advanced_pat_ctx = advanced_pat_ctx, # Injected
-            fib_ctx          = fib_ctx,          # Injected
+            advanced_pat_ctx = advanced_pat_ctx,
+            fib_ctx          = fib_ctx,
         )
         signal_engine.print_summary(signal_result)
         signal_ctx = signal_engine.get_ai_context(signal_result)
 
-        # ── 7. Sentiment Engine ─────────────────────────
+        # ── 7. Sentiment Engine ─────────────────────────────
         sentiment_ctx    = {}
         sentiment_result = {}
         conflict_result  = {}
@@ -142,9 +155,9 @@ class AnalysisAgent:
                 sentiment_result = sentiment_result,
             )
         except Exception as e:
-            log.warning(f"[AnalysisAgent] Sentiment error (non-critical): {e}")
+            log.warning(f"[AnalysisAgent] Sentiment error: {e}")
 
-        # ── 8. SMC Engine ───────────────────────────────
+        # ── 8. SMC Engine ───────────────────────────────────
         smc_result = {}
         smc_ctx    = {}
         try:
@@ -153,15 +166,15 @@ class AnalysisAgent:
             smc.print_summary(smc_result)
             smc_ctx    = smc.get_ai_context(smc_result)
         except Exception as e:
-            log.warning(f"[AnalysisAgent] SMC Engine error (non-critical): {e}")
+            log.warning(f"[AnalysisAgent] SMC Engine error: {e}")
 
-        # ── 9. News Filter ───────────────────────────────────────
+        # ── 9. News Filter ───────────────────────────────────
         news_filter = NewsFilter()
         news_result = news_filter.check(symbol)
         news_filter.print_summary(news_result)
         news_ctx    = news_filter.get_ai_context(news_result)
 
-        # ── 10. Classic LLM Analyst ───────────────────────────────
+        # ── 10. Classic LLM Analyst ──────────────────────────
         llm_result = AIAnalyst().analyze(
             ind_ctx          = ind_ctx,
             pat_ctx          = pat_ctx,
@@ -169,42 +182,77 @@ class AnalysisAgent:
             regime           = regime,
             signal           = signal_result,
             mtf_bias         = mtf_bias,
-            advanced_pat_ctx = advanced_pat_ctx, # Injected
-            fib_ctx          = fib_ctx,          # Injected
+            advanced_pat_ctx = advanced_pat_ctx,
+            fib_ctx          = fib_ctx,
             symbol           = symbol,
         )
         AIAnalyst().print_summary(llm_result)
         llm_ctx = AIAnalyst().get_ai_context(llm_result)
 
-        # ── 11. MASTER ANALYST BRAIN ────────────────────────
+        # ── 11. VISION AI (Day 47) ────────────────────────────
+        vision_result = {}
+        vision_ctx    = {}
+        fusion_result = {}
+        try:
+            if self.chart_reader:
+                log.info(f"[AnalysisAgent] 👁️ Running Vision AI for {symbol} {timeframe}")
+                vision_result = self.chart_reader.capture_and_analyze(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    quant_ctx=ind_ctx,
+                )
+                vision_ctx = vision_result.get("vision_ctx", {})
+
+                # Vision + Quant Fusion
+                fusion_result = self.chart_reader.fuse_with_quant(
+                    vision_result=vision_result,
+                    analysis_output={
+                        "final_signal": signal_result.get("signal", "NO TRADE"),
+                        "signal":       signal_result,
+                        "ind_ctx":      ind_ctx,
+                    }
+                )
+                log.info(
+                    f"[AnalysisAgent] Vision fusion: {fusion_result.get('final_signal')} "
+                    f"conf={fusion_result.get('adjusted_conf')}% "
+                    f"conflict={fusion_result.get('has_conflict')}"
+                )
+            else:
+                log.info("[AnalysisAgent] Vision skipped (no ChartReader)")
+        except Exception as e:
+            log.warning(f"[AnalysisAgent] Vision AI error (non-critical): {e}")
+
+        # ── 12. MASTER ANALYST BRAIN ─────────────────────────
         master_result = {}
         master_ctx    = {}
         try:
             master = MasterAnalyst()
             master_result = master.analyze(
-                symbol        = symbol,
-                timeframe     = timeframe,
-                ind_ctx       = ind_ctx,
-                pat_ctx       = pat_ctx,
-                sr_ctx        = sr_ctx,
-                regime        = regime,
-                mtf_bias      = mtf_bias,
-                signal        = signal_result,
-                sentiment_ctx = sentiment_ctx,
-                news_ctx      = news_ctx,
-                memory_ctx    = memory_ctx or {},
-                bias_ctx      = bias_ctx,
-                smc_ctx       = smc_ctx,
-                fib_ctx       = fib_ctx,          # Pass to master if needed
-                advanced_pat_ctx = advanced_pat_ctx # Pass to master if needed
+                symbol           = symbol,
+                timeframe        = timeframe,
+                ind_ctx          = ind_ctx,
+                pat_ctx          = pat_ctx,
+                sr_ctx           = sr_ctx,
+                regime           = regime,
+                mtf_bias         = mtf_bias,
+                signal           = signal_result,
+                sentiment_ctx    = sentiment_ctx,
+                news_ctx         = news_ctx,
+                memory_ctx       = memory_ctx or {},
+                bias_ctx         = bias_ctx,
+                smc_ctx          = smc_ctx,
+                fib_ctx          = fib_ctx,
+                advanced_pat_ctx = advanced_pat_ctx,
+                # Day 47: vision context inject
+                vision_ctx       = vision_ctx,
             )
             master.print_summary(master_result)
             master_ctx = master.get_ai_context(master_result)
         except Exception as e:
-            log.warning(f"[AnalysisAgent] MasterAnalyst error (non-critical): {e}")
+            log.warning(f"[AnalysisAgent] MasterAnalyst error: {e}")
 
         # ── Final Signal Resolution ───────────────────────────
-        # Priority Matrix: News block > Sentiment conflict > MasterAnalyst > Rule engine
+        # Priority: News block > Sentiment conflict > Vision conflict > MasterAnalyst > Rule
         final_signal = signal_result["signal"]
 
         if not news_result["trade_allowed"]:
@@ -215,18 +263,22 @@ class AnalysisAgent:
             final_signal = "NO TRADE"
             log.info("[AnalysisAgent] -> NO TRADE (high-confidence sentiment conflict)")
 
+        # Day 47: Vision conflict → NO TRADE
+        elif fusion_result.get("has_conflict") and fusion_result.get("adjusted_conf", 100) < 45:
+            final_signal = "NO TRADE"
+            log.info("[AnalysisAgent] -> NO TRADE (vision/quant conflict — low confidence)")
+
         elif master_ctx.get("master_signal") in ("BUY", "SELL", "WAIT"):
             ma_signal    = master_ctx["master_signal"]
             final_signal = "NO TRADE" if ma_signal == "WAIT" else ma_signal
-            log.info(f"[AnalysisAgent] -> {final_signal} (MasterAnalyst decision override)")
+            log.info(f"[AnalysisAgent] -> {final_signal} (MasterAnalyst override)")
 
-        # Logging metrics
         log.info(
             f"[AnalysisAgent] Complete — "
             f"Rule: {signal_result['signal']} | "
             f"LLM: {llm_result.get('signal')} | "
-            f"SMC: {smc_ctx.get('smc_signal', 'N/A')} ({smc_ctx.get('smc_grade', '-')}) | "
-            f"Fib: {fib_ctx.get('fib_bias', 'N/A')} | "
+            f"Vision: {vision_ctx.get('vision_trend', 'N/A')} ({vision_ctx.get('vision_confidence', 0)}%) | "
+            f"Fusion: {fusion_result.get('final_signal', 'N/A')} ({fusion_result.get('adjusted_conf', 0)}%) | "
             f"Master: {master_ctx.get('master_signal', 'N/A')} | "
             f"Final: {final_signal}"
         )
@@ -253,6 +305,11 @@ class AnalysisAgent:
             "conflict":          conflict_result,
             "smc":               smc_result,
             "smc_ctx":           smc_ctx,
+            # Day 47 new
+            "vision":            vision_result,
+            "vision_ctx":        vision_ctx,
+            "vision_fusion":     fusion_result,
+            # Master
             "master":            master_result,
             "master_ctx":        master_ctx,
             "final_signal":      final_signal,
