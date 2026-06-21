@@ -627,3 +627,188 @@ JSON schema:
             print(f"\n  ⚠  Error: {result['error']}")
 
         print(bar + "\n")
+
+# ============================================================
+# Day 62 — MasterAnalyst integration patch
+# ============================================================
+# Apply these changes to agents/master_analyst.py (the Day 44 SMC
+# version — the second class definition in your file). This follows
+# the exact same pattern Day 44 used to inject smc_ctx.
+# ============================================================
+
+
+# ── 1. SYSTEM PROMPT: extend rule #5 / add rule about liquidity ──
+# Replace the existing rule 5 in _SYSTEM with:
+"""
+5. The `smart_money_concepts` block reflects institutional order-flow context (H4 order
+   blocks / fair value gaps / structure shifts, confirmed on M15). Treat a high SMC
+   confluence score (smc_score >= 65, grade A or A+) as a strong supporting factor — but
+   never let it override a clear news block or a critical multi-timeframe conflict.
+6. The `liquidity_intelligence` block reflects stop-hunt / liquidity-sweep context.
+   A confirmed stop hunt (liquidity_stop_hunt=true) with grade A or A+ means price likely
+   took out retail stops and is reversing — treat this as a high-priority confirming
+   signal, especially when it agrees with smart_money_concepts direction. Do NOT chase
+   a breakout that liquidity_intelligence flags as a sweep-and-reverse (i.e. don't go
+   SELL just because a support level broke if liquidity_direction says BULLISH_REVERSAL).
+7. Self-critique: What could go wrong? Am I missing something?
+"""
+# (renumber the old rule 6 "Self-critique" to 7, as shown above)
+
+
+# ── 2. analyze() signature: add liquidity_ctx parameter ──────────
+"""
+def analyze(
+    self,
+    symbol:       str,
+    timeframe:    str,
+    ind_ctx:      dict,
+    pat_ctx:      dict,
+    sr_ctx:       dict,
+    regime:       dict,
+    mtf_bias:     dict,
+    signal:       dict,
+    sentiment_ctx: dict = None,
+    news_ctx:     dict = None,
+    memory_ctx:   dict = None,
+    bias_ctx:     dict = None,
+    smc_ctx:      dict = None,
+    liquidity_ctx: dict = None,     # ⭐ Day 62
+) -> dict:
+"""
+# and pass it through to _build_context(...) and _calculate_final_confidence(...)
+# exactly like smc_ctx was passed.
+
+
+# ── 3. _build_context(): add liquidity_ctx param + JSON block ────
+"""
+def _build_context(
+    self,
+    symbol, timeframe,
+    ind_ctx, pat_ctx, sr_ctx,
+    regime, mtf_bias, signal,
+    sentiment_ctx, news_ctx,
+    memory_ctx, bias_ctx,
+    smc_ctx,
+    liquidity_ctx,           # ⭐ Day 62
+) -> str:
+    ...
+    # ── Liquidity (Day 62) ─────────────────────
+    liq_bias       = liquidity_ctx.get("liquidity_bias", "NEUTRAL")
+    liq_score      = liquidity_ctx.get("liquidity_score", 0)
+    liq_grade      = liquidity_ctx.get("liquidity_grade", "INVALID")
+    liq_stop_hunt  = liquidity_ctx.get("liquidity_stop_hunt", False)
+    liq_swept      = liquidity_ctx.get("liquidity_swept_level")
+    liq_swept_type = liquidity_ctx.get("liquidity_swept_type")
+    liq_direction  = liquidity_ctx.get("liquidity_direction", "NONE")
+    liq_target     = liquidity_ctx.get("liquidity_target")
+    liq_session    = liquidity_ctx.get("liquidity_session_event", "NONE")
+    liq_analysis   = liquidity_ctx.get("liquidity_analysis", "")
+    ...
+
+    ctx = {
+        ...
+        "smart_money_concepts": { ... },   # existing Day 44 block
+
+        "liquidity_intelligence": {        # ⭐ Day 62 new block
+            "bias":               liq_bias,
+            "confluence_score":   liq_score,
+            "grade":              liq_grade,
+            "stop_hunt_detected": liq_stop_hunt,
+            "swept_level":        liq_swept,
+            "swept_level_type":   liq_swept_type,
+            "reversal_direction": liq_direction,
+            "target_liquidity":   liq_target,
+            "session_event":      liq_session,
+            "summary":            liq_analysis,
+        },
+
+        "sentiment": { ... },
+        ...
+    }
+"""
+
+
+# ── 4. analyze(): pass liquidity_ctx through to context builder ──
+"""
+context = self._build_context(
+    symbol, timeframe, ind_ctx, pat_ctx, sr_ctx,
+    regime, mtf_bias, signal,
+    sentiment_ctx or {},
+    news_ctx or {},
+    memory_ctx or {},
+    bias_ctx or {},
+    smc_ctx or {},
+    liquidity_ctx or {},      # ⭐ Day 62
+)
+...
+final_conf = self._calculate_final_confidence(
+    llm_conf       = parsed.get("trade_plan", {}).get("confidence", 50),
+    technical_conf = signal.get("confidence", 50),
+    sentiment_conf = (sentiment_ctx or {}).get("sentiment_conf", 50),
+    memory_ctx     = memory_ctx or {},
+    smc_ctx        = smc_ctx or {},
+    liquidity_ctx  = liquidity_ctx or {},   # ⭐ Day 62
+)
+"""
+
+
+# ── 5. _calculate_final_confidence(): add liquidity weight ───────
+"""
+def _calculate_final_confidence(
+    self,
+    llm_conf:       int,
+    technical_conf: int,
+    sentiment_conf: int,
+    memory_ctx:     dict,
+    smc_ctx:        dict = None,
+    liquidity_ctx:  dict = None,     # ⭐ Day 62
+) -> int:
+    '''
+    Weighted average (Day 62 rebalance):
+        LLM opinion         : 32%
+        Technical signals   : 28%
+        Sentiment           : 13%
+        Historical success  : 9%
+        SMC confluence      : 9%
+        Liquidity confluence: 9%   (Day 62 — NEW)
+    '''
+    smc_ctx       = smc_ctx or {}
+    liquidity_ctx = liquidity_ctx or {}
+    win_rate   = memory_ctx.get("overall_win_rate", 50)
+    hist_score = win_rate
+    smc_score  = smc_ctx.get("smc_score", 50)
+    liq_score  = liquidity_ctx.get("liquidity_score", 50)
+
+    weighted = (
+        llm_conf       * 0.32 +
+        technical_conf * 0.28 +
+        sentiment_conf * 0.13 +
+        hist_score     * 0.09 +
+        smc_score      * 0.09 +
+        liq_score      * 0.09
+    )
+
+    recent = memory_ctx.get("recent_results", [])
+    if recent:
+        last_5 = recent[-5:]
+        win_streak  = sum(1 for r in last_5 if r == "WIN")
+        loss_streak = sum(1 for r in last_5 if r == "LOSS")
+        if win_streak >= 3:  weighted += 3
+        if loss_streak >= 3: weighted -= 5
+
+    if smc_ctx.get("smc_grade") in ("A+", "A"):
+        weighted += 3
+
+    # Day 62 — confirmed high-grade stop hunt → extra confidence bump,
+    # since it's institutional confirmation that retail liquidity has
+    # already been taken (lower chance of getting stopped out again).
+    if liquidity_ctx.get("liquidity_grade") in ("A+", "A") and liquidity_ctx.get("liquidity_stop_hunt"):
+        weighted += 4
+
+    return max(0, min(99, round(weighted)))
+"""
+
+
+# ── 6. get_ai_context(): no change needed — DecisionAgent already
+#      reads master_ctx fields; MasterAnalyst's own internal use of
+#      liquidity_ctx happens inside analyze()/context-builder above.

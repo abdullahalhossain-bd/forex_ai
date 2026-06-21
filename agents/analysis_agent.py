@@ -315,3 +315,106 @@ class AnalysisAgent:
             "master_ctx":        master_ctx,
             "final_signal":      final_signal,
         }
+        # ============================================================
+# Day 62 — AnalysisAgent integration patch
+# ============================================================
+# Apply to agents/analysis_agent.py. Adds a new pipeline step that
+# runs LiquidityEngine right after SMC (step 8) and before News (step 9),
+# then threads liquidity_ctx through to MasterAnalyst (step 12) and
+# into the final return dict.
+# ============================================================
+
+
+# ── 1. New import ──────────────────────────────────────────────
+"""
+from analysis.liquidity_engine import LiquidityEngine
+"""
+
+
+# ── 2. New pipeline step — insert AFTER "8. SMC Engine" block,
+#      BEFORE "9. News Filter" block ────────────────────────────
+"""
+        # ── 8.5. LIQUIDITY ENGINE (Day 62) ───────────────────
+        liquidity_result = {}
+        liquidity_ctx    = {}
+        try:
+            liquidity_engine = LiquidityEngine()
+            liquidity_result = liquidity_engine.analyze(df, smc_ctx=smc_ctx)
+            liquidity_engine.print_summary(liquidity_result)
+            liquidity_ctx    = liquidity_engine.get_ai_context(liquidity_result)
+        except Exception as e:
+            log.warning(f"[AnalysisAgent] Liquidity Engine error: {e}")
+"""
+
+
+# ── 3. MasterAnalyst call — add liquidity_ctx kwarg ─────────────
+# In step "12. MASTER ANALYST BRAIN", inside master.analyze(...) call,
+# add this line alongside the existing smc_ctx= line:
+"""
+            master_result = master.analyze(
+                symbol           = symbol,
+                timeframe        = timeframe,
+                ind_ctx          = ind_ctx,
+                pat_ctx          = pat_ctx,
+                sr_ctx           = sr_ctx,
+                regime           = regime,
+                mtf_bias         = mtf_bias,
+                signal           = signal_result,
+                sentiment_ctx    = sentiment_ctx,
+                news_ctx         = news_ctx,
+                memory_ctx       = memory_ctx or {},
+                bias_ctx         = bias_ctx,
+                smc_ctx          = smc_ctx,
+                fib_ctx          = fib_ctx,
+                advanced_pat_ctx = advanced_pat_ctx,
+                vision_ctx       = vision_ctx,
+                liquidity_ctx    = liquidity_ctx,   # ⭐ Day 62
+            )
+"""
+
+
+# ── 4. Optional extra safety gate in Final Signal Resolution ────
+# Insert this check among the elif-chain in "Final Signal Resolution"
+# (after the Vision conflict check, before MasterAnalyst override),
+# to prevent the AI from chasing a breakout that liquidity intelligence
+# flags as a sweep about to reverse against the rule-engine signal:
+"""
+        # Day 62: Liquidity sweep contradicts rule signal at high grade → NO TRADE
+        elif (
+            liquidity_ctx.get("liquidity_stop_hunt")
+            and liquidity_ctx.get("liquidity_grade") in ("A+", "A")
+            and (
+                (signal_result["signal"] == "SELL" and liquidity_ctx.get("liquidity_direction") == "BULLISH_REVERSAL")
+                or (signal_result["signal"] == "BUY" and liquidity_ctx.get("liquidity_direction") == "BEARISH_REVERSAL")
+            )
+        ):
+            final_signal = "NO TRADE"
+            log.info(
+                "[AnalysisAgent] -> NO TRADE (Day 62: high-grade liquidity sweep "
+                "contradicts rule signal — likely stop-hunt reversal)"
+            )
+"""
+
+
+# ── 5. Return dict — add liquidity outputs ───────────────────────
+# Add these two keys to the final `return {...}` dict, alongside the
+# existing "smc": smc_result / "smc_ctx": smc_ctx lines:
+"""
+            "liquidity":         liquidity_result,   # ⭐ Day 62
+            "liquidity_ctx":     liquidity_ctx,       # ⭐ Day 62
+"""
+
+
+# ── 6. Final log line — optionally extend the summary log ───────
+"""
+        log.info(
+            f"[AnalysisAgent] Complete — "
+            f"Rule: {signal_result['signal']} | "
+            f"LLM: {llm_result.get('signal')} | "
+            f"Vision: {vision_ctx.get('vision_trend', 'N/A')} ({vision_ctx.get('vision_confidence', 0)}%) | "
+            f"Fusion: {fusion_result.get('final_signal', 'N/A')} ({fusion_result.get('adjusted_conf', 0)}%) | "
+            f"Liquidity: {liquidity_ctx.get('liquidity_bias', 'N/A')} ({liquidity_ctx.get('liquidity_grade', 'N/A')}) | "
+            f"Master: {master_ctx.get('master_signal', 'N/A')} | "
+            f"Final: {final_signal}"
+        )
+"""
