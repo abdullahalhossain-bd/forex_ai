@@ -1,13 +1,13 @@
-# agents/analysis_agent.py  (Day 47 Vision Update)
+# agents/analysis_agent.py  (Day 63 Session Intelligence Update)
 # ============================================================
-# Day 44 pipeline-এর সাথে Day 47 Vision Layer যোগ হয়েছে।
+# Day 47 pipeline-এর সাথে Day 63 Session Intelligence যোগ হয়েছে।
 #
-# নতুন:
-#   Step 12: ChartReader (Vision AI)
-#   Step 13: Vision + Quant Fusion
+# নতুন Step (Day 63):
+#   Step 0: SessionAnalyzer — time-aware strategy selection
 #
-# Vision inject হয় MasterAnalyst-এর আগে,
-# তাই Master সব context পায় — visual + quant।
+# Session Intelligence inject হয় সব module-এর আগে,
+# তাই সব context session-aware হয়ে যায়।
+# Dead zone-এ trade block হয়। Session-specific pair priority দেওয়া হয়।
 # ============================================================
 
 from analysis.patterns import PatternDetector
@@ -18,6 +18,7 @@ from analysis.fibonacci import FibonacciEngine
 from analysis.sentiment import SentimentEngine
 from analysis.smc_engine import SMCEngine
 from analysis.sentiment_data import SentimentDataProvider
+from analysis.session_analyzer import SessionAnalyzer   # ← Day 63
 from fundamental.news_filter import NewsFilter
 from ai.ai_analyst import AIAnalyst
 from agents.master_analyst import MasterAnalyst
@@ -29,17 +30,15 @@ log = get_logger("analysis_agent")
 
 class AnalysisAgent:
     """
-    Day 47 Unified Pipeline:
-      Patterns -> S/R -> Advanced Patterns -> Fibonacci -> Bias -> Signal
+    Day 63 Unified Pipeline:
+      Session Intelligence (NEW)
+      -> Patterns -> S/R -> Advanced Patterns -> Fibonacci -> Bias -> Signal
       -> Sentiment -> SMC -> News -> Classic LLM -> Vision AI -> MasterAnalyst
     """
 
     def __init__(self, chart_reader=None):
-        """
-        chart_reader: ChartReader instance (Day 47 vision)
-        None দিলে vision skip হবে (backward compatible)।
-        """
-        self.chart_reader = chart_reader
+        self.chart_reader     = chart_reader
+        self.session_analyzer = SessionAnalyzer()   # Day 63
 
     def run(self, market_output: dict, memory_ctx: dict = None) -> dict:
         if "error" in market_output:
@@ -53,9 +52,30 @@ class AnalysisAgent:
         timeframe = market_output.get("timeframe", "15m")
 
         log.info(
-            f"[AnalysisAgent] Running Day 47 pipeline for {symbol} ({timeframe}) — "
-            "Technical + Advanced + Fib + Sentiment + SMC + News + Vision + MasterAnalyst"
+            f"[AnalysisAgent] Running Day 63 pipeline for {symbol} ({timeframe})"
         )
+
+        # ── 0. SESSION INTELLIGENCE (Day 63) ─────────────────
+        # SMC context는 아직 없으므로 빈 dict로 시작, 나중에 update
+        session_result = self.session_analyzer.analyze(
+            pair        = symbol,
+            smc_ctx     = {},
+            signal      = "NO TRADE",
+            signal_conf = 0,
+        )
+        session_ctx = self.session_analyzer.get_ai_context(session_result)
+
+        # Dead zone guard — trade block
+        if session_result["session_info"]["is_dead_zone"]:
+            log.info(f"[AnalysisAgent] ⛔ DEAD ZONE at {session_ctx['gmt_time']} — pipeline paused")
+            return {
+                "df":           df,
+                "final_signal": "NO TRADE",
+                "session":      session_result,
+                "session_ctx":  session_ctx,
+                "dead_zone":    True,
+                "dead_zone_reason": "Low liquidity dead zone — no trades",
+            }
 
         # ── 1. Candlestick Patterns ───────────────────────────
         detector = PatternDetector()
@@ -168,6 +188,16 @@ class AnalysisAgent:
         except Exception as e:
             log.warning(f"[AnalysisAgent] SMC Engine error: {e}")
 
+        # ── Day 63: Re-run Session with SMC context ───────────
+        session_result = self.session_analyzer.analyze(
+            pair        = symbol,
+            smc_ctx     = smc_ctx,
+            signal      = signal_result.get("signal", "NO TRADE"),
+            signal_conf = signal_result.get("confidence", 0),
+        )
+        session_ctx = self.session_analyzer.get_ai_context(session_result)
+        self.session_analyzer.print_summary(session_result)
+
         # ── 9. News Filter ───────────────────────────────────
         news_filter = NewsFilter()
         news_result = news_filter.check(symbol)
@@ -175,8 +205,7 @@ class AnalysisAgent:
         news_ctx    = news_filter.get_ai_context(news_result)
 
         # ── 10. Classic LLM Analyst ──────────────────────────
-        _llm = AIAnalyst()
-        llm_result = _llm.analyze(
+        llm_result = AIAnalyst().analyze(
             ind_ctx          = ind_ctx,
             pat_ctx          = pat_ctx,
             sr_ctx           = sr_ctx,
@@ -187,8 +216,8 @@ class AnalysisAgent:
             fib_ctx          = fib_ctx,
             symbol           = symbol,
         )
-        _llm.print_summary(llm_result)
-        llm_ctx = _llm.get_ai_context(llm_result)
+        AIAnalyst().print_summary(llm_result)
+        llm_ctx = AIAnalyst().get_ai_context(llm_result)
 
         # ── 11. VISION AI (Day 47) ────────────────────────────
         vision_result = {}
@@ -204,7 +233,6 @@ class AnalysisAgent:
                 )
                 vision_ctx = vision_result.get("vision_ctx", {})
 
-                # Vision + Quant Fusion
                 fusion_result = self.chart_reader.fuse_with_quant(
                     vision_result=vision_result,
                     analysis_output={
@@ -213,13 +241,6 @@ class AnalysisAgent:
                         "ind_ctx":      ind_ctx,
                     }
                 )
-                log.info(
-                    f"[AnalysisAgent] Vision fusion: {fusion_result.get('final_signal')} "
-                    f"conf={fusion_result.get('adjusted_conf')}% "
-                    f"conflict={fusion_result.get('has_conflict')}"
-                )
-            else:
-                log.info("[AnalysisAgent] Vision skipped (no ChartReader)")
         except Exception as e:
             log.warning(f"[AnalysisAgent] Vision AI error (non-critical): {e}")
 
@@ -244,8 +265,8 @@ class AnalysisAgent:
                 smc_ctx          = smc_ctx,
                 fib_ctx          = fib_ctx,
                 advanced_pat_ctx = advanced_pat_ctx,
-                # Day 47: vision context inject
                 vision_ctx       = vision_ctx,
+                session_ctx      = session_ctx,   # ← Day 63
             )
             master.print_summary(master_result)
             master_ctx = master.get_ai_context(master_result)
@@ -253,10 +274,18 @@ class AnalysisAgent:
             log.warning(f"[AnalysisAgent] MasterAnalyst error: {e}")
 
         # ── Final Signal Resolution ───────────────────────────
-        # Priority: News block > Sentiment conflict > Vision conflict > MasterAnalyst > Rule
         final_signal = signal_result["signal"]
 
-        if not news_result.get("trade_allowed", True):
+        # Day 63: Session dead zone / strategy gate
+        if not session_result["trade_allowed"]:
+            final_signal = "NO TRADE"
+            log.info(
+                f"[AnalysisAgent] -> NO TRADE "
+                f"(Session gate: {session_ctx['current_session']} — "
+                f"{session_ctx['session_strategy']})"
+            )
+
+        elif not news_result["trade_allowed"]:
             final_signal = "NO TRADE"
             log.info("[AnalysisAgent] -> NO TRADE (news block override)")
 
@@ -264,7 +293,6 @@ class AnalysisAgent:
             final_signal = "NO TRADE"
             log.info("[AnalysisAgent] -> NO TRADE (high-confidence sentiment conflict)")
 
-        # Day 47: Vision conflict → NO TRADE
         elif fusion_result.get("has_conflict") and fusion_result.get("adjusted_conf", 100) < 45:
             final_signal = "NO TRADE"
             log.info("[AnalysisAgent] -> NO TRADE (vision/quant conflict — low confidence)")
@@ -276,10 +304,9 @@ class AnalysisAgent:
 
         log.info(
             f"[AnalysisAgent] Complete — "
+            f"Session: {session_ctx['current_session']} ({session_ctx['gmt_time']}) | "
+            f"Strategy: {session_ctx['session_strategy']} | "
             f"Rule: {signal_result['signal']} | "
-            f"LLM: {llm_result.get('signal')} | "
-            f"Vision: {vision_ctx.get('vision_trend', 'N/A')} ({vision_ctx.get('vision_confidence', 0)}%) | "
-            f"Fusion: {fusion_result.get('final_signal', 'N/A')} ({fusion_result.get('adjusted_conf', 0)}%) | "
             f"Master: {master_ctx.get('master_signal', 'N/A')} | "
             f"Final: {final_signal}"
         )
@@ -306,115 +333,15 @@ class AnalysisAgent:
             "conflict":          conflict_result,
             "smc":               smc_result,
             "smc_ctx":           smc_ctx,
-            # Day 47 new
+            # Day 47
             "vision":            vision_result,
             "vision_ctx":        vision_ctx,
             "vision_fusion":     fusion_result,
+            # Day 63
+            "session":           session_result,
+            "session_ctx":       session_ctx,
             # Master
             "master":            master_result,
             "master_ctx":        master_ctx,
             "final_signal":      final_signal,
         }
-        # ============================================================
-# Day 62 — AnalysisAgent integration patch
-# ============================================================
-# Apply to agents/analysis_agent.py. Adds a new pipeline step that
-# runs LiquidityEngine right after SMC (step 8) and before News (step 9),
-# then threads liquidity_ctx through to MasterAnalyst (step 12) and
-# into the final return dict.
-# ============================================================
-
-
-# ── 1. New import ──────────────────────────────────────────────
-"""
-from analysis.liquidity_engine import LiquidityEngine
-"""
-
-
-# ── 2. New pipeline step — insert AFTER "8. SMC Engine" block,
-#      BEFORE "9. News Filter" block ────────────────────────────
-"""
-        # ── 8.5. LIQUIDITY ENGINE (Day 62) ───────────────────
-        liquidity_result = {}
-        liquidity_ctx    = {}
-        try:
-            liquidity_engine = LiquidityEngine()
-            liquidity_result = liquidity_engine.analyze(df, smc_ctx=smc_ctx)
-            liquidity_engine.print_summary(liquidity_result)
-            liquidity_ctx    = liquidity_engine.get_ai_context(liquidity_result)
-        except Exception as e:
-            log.warning(f"[AnalysisAgent] Liquidity Engine error: {e}")
-"""
-
-
-# ── 3. MasterAnalyst call — add liquidity_ctx kwarg ─────────────
-# In step "12. MASTER ANALYST BRAIN", inside master.analyze(...) call,
-# add this line alongside the existing smc_ctx= line:
-"""
-            master_result = master.analyze(
-                symbol           = symbol,
-                timeframe        = timeframe,
-                ind_ctx          = ind_ctx,
-                pat_ctx          = pat_ctx,
-                sr_ctx           = sr_ctx,
-                regime           = regime,
-                mtf_bias         = mtf_bias,
-                signal           = signal_result,
-                sentiment_ctx    = sentiment_ctx,
-                news_ctx         = news_ctx,
-                memory_ctx       = memory_ctx or {},
-                bias_ctx         = bias_ctx,
-                smc_ctx          = smc_ctx,
-                fib_ctx          = fib_ctx,
-                advanced_pat_ctx = advanced_pat_ctx,
-                vision_ctx       = vision_ctx,
-                liquidity_ctx    = liquidity_ctx,   # ⭐ Day 62
-            )
-"""
-
-
-# ── 4. Optional extra safety gate in Final Signal Resolution ────
-# Insert this check among the elif-chain in "Final Signal Resolution"
-# (after the Vision conflict check, before MasterAnalyst override),
-# to prevent the AI from chasing a breakout that liquidity intelligence
-# flags as a sweep about to reverse against the rule-engine signal:
-"""
-        # Day 62: Liquidity sweep contradicts rule signal at high grade → NO TRADE
-        elif (
-            liquidity_ctx.get("liquidity_stop_hunt")
-            and liquidity_ctx.get("liquidity_grade") in ("A+", "A")
-            and (
-                (signal_result["signal"] == "SELL" and liquidity_ctx.get("liquidity_direction") == "BULLISH_REVERSAL")
-                or (signal_result["signal"] == "BUY" and liquidity_ctx.get("liquidity_direction") == "BEARISH_REVERSAL")
-            )
-        ):
-            final_signal = "NO TRADE"
-            log.info(
-                "[AnalysisAgent] -> NO TRADE (Day 62: high-grade liquidity sweep "
-                "contradicts rule signal — likely stop-hunt reversal)"
-            )
-"""
-
-
-# ── 5. Return dict — add liquidity outputs ───────────────────────
-# Add these two keys to the final `return {...}` dict, alongside the
-# existing "smc": smc_result / "smc_ctx": smc_ctx lines:
-"""
-            "liquidity":         liquidity_result,   # ⭐ Day 62
-            "liquidity_ctx":     liquidity_ctx,       # ⭐ Day 62
-"""
-
-
-# ── 6. Final log line — optionally extend the summary log ───────
-"""
-        log.info(
-            f"[AnalysisAgent] Complete — "
-            f"Rule: {signal_result['signal']} | "
-            f"LLM: {llm_result.get('signal')} | "
-            f"Vision: {vision_ctx.get('vision_trend', 'N/A')} ({vision_ctx.get('vision_confidence', 0)}%) | "
-            f"Fusion: {fusion_result.get('final_signal', 'N/A')} ({fusion_result.get('adjusted_conf', 0)}%) | "
-            f"Liquidity: {liquidity_ctx.get('liquidity_bias', 'N/A')} ({liquidity_ctx.get('liquidity_grade', 'N/A')}) | "
-            f"Master: {master_ctx.get('master_signal', 'N/A')} | "
-            f"Final: {final_signal}"
-        )
-"""
