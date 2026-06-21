@@ -25,7 +25,7 @@ class MarketAgent:
 
         # MTF
         mtf      = MultiTimeframeAnalyzer(self.symbol)
-        mtf_data = mtf.analyze(["1d", "4h", "15m"])
+        mtf_data = mtf.analyze(["1d", "4h", "1h", "15m"])
         mtf_bias = mtf.print_summary(mtf_data)
 
         # Fetch
@@ -54,7 +54,7 @@ class MarketAgent:
 
         log.info(
             f"[MarketAgent] Done — "
-            f"Price: {ind_ctx.get('close')} | "
+            f"Price: {ind_ctx.get('price')} | "
             f"Trend: {ind_ctx.get('trend')} | "
             f"Regime: {regime_result.get('regime')}"
         )

@@ -1,34 +1,49 @@
-# config.py — Autonomous Forex AI Trader Configuration | Day 31 Part 5
-# ============================================================================
-# Sensitive broker credentials কখনো হার্ডকোড বা git-এ commit করা যাবে না। 
-# সব .env ফাইল থেকে আসবে। এই মডিউলে গ্লোবাল কনফিগ ও এমটি৫ গেটওয়ে মার্জ করা হয়েছে।
-# ============================================================================
+# config.py — Autonomous Forex AI Trader Configuration
+# ============================================================
+# Single source of truth for all configuration. Sensitive credentials
+# come from .env — never hardcode or commit secrets.
+# ============================================================
 
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environmental variables from .env file
+# Load environment variables
 load_dotenv()
 
-# ── General Project Settings ─────────────────────────────────
+# ── Project Paths ──────────────────────────────────────────────
+PROJECT_ROOT: Path = Path(__file__).resolve().parent
+LOG_DIR: Path = PROJECT_ROOT / "logs"
+DATA_DIR: Path = PROJECT_ROOT / "data"
+DB_PATH: Path = PROJECT_ROOT / "database" / "trader.db"
+MODEL_DIR: Path = PROJECT_ROOT / "models"
+CHART_OUTPUT: Path = DATA_DIR / "chart.html"
+
+# Ensure directories exist
+for _d in (LOG_DIR, DATA_DIR, MODEL_DIR, DB_PATH.parent):
+    _d.mkdir(parents=True, exist_ok=True)
+
+# ── General Project Settings ───────────────────────────────────
 PROJECT_NAME = "Autonomous Forex AI Trader"
 
-# ── Capital & Risk Management ────────────────────────────────
-INITIAL_BALANCE = 1000
+# ── Capital & Risk Management ──────────────────────────────────
+INITIAL_BALANCE = 10000
+INITIAL_CAPITAL = INITIAL_BALANCE  # Alias for compatibility
 RISK_PER_TRADE = 0.01
 MAX_DAILY_LOSS = 0.03
 MAX_OPEN_TRADES = 3
+MAX_POSITIONS = 5  # Maximum concurrent positions portfolio-wide
 
-# ── Market & Data Settings ───────────────────────────────────
+# ── Market & Data Settings ─────────────────────────────────────
 MARKET = "forex"
 DATA_SOURCE = "yfinance"
 SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY"]
 
-# ── Timeframes ───────────────────────────────────────────────
+# ── Timeframes ─────────────────────────────────────────────────
 DEFAULT_TIMEFRAME = "15m"
 MTF_CHAIN = ["1d", "4h", "1h", "15m"]
 
-# ── Technical Indicator Settings ─────────────────────────────
+# ── Technical Indicator Settings ───────────────────────────────
 RSI_PERIOD = 14
 RSI_OVERBOUGHT = 70
 RSI_OVERSOLD = 30
@@ -37,38 +52,90 @@ MA_SLOW = 50
 MA_TREND = 200
 ATR_PERIOD = 14
 
-# ── Support / Resistance Settings ────────────────────────────
+# ── Support / Resistance Settings ──────────────────────────────
 SR_WINDOW = 5
 SR_TOLERANCE = 0.0015
 
-# ── File Paths ───────────────────────────────────────────────
-LOG_FILE = "logs/trader.log"
-DB_PATH = "database/trader.db"
-CHART_OUTPUT = "data/chart.html"
+# ── File Paths (legacy compatibility) ─────────────────────────
+LOG_FILE = str(LOG_DIR / "trader.log")
 
-# ── System / Operational Loops ────────────────────────────────
+# ── System / Operational Loops ─────────────────────────────────
 PAPER_BALANCE = 10000
 LOOP_INTERVAL_SEC = 60
 BACKUP_INTERVAL_MIN = 30
 RECOVERY_COOLDOWN_MIN = 5
 
-# ── Execution Mode ───────────────────────────────────────────
-# "paper"    → Local PaperTrader simulation
-# "mt5_demo" → Real MT5 demo account execution
+# ── Monitoring ─────────────────────────────────────────────────
+MONITORING_INTERVAL = 60  # seconds between health checks
+
+# ── AI / LLM Settings ─────────────────────────────────────────
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+HF_TOKEN = os.getenv("HF_TOKEN", "")
+
+# ── Execution Mode ─────────────────────────────────────────────
+# "paper"    -> Local PaperTrader simulation (default, safe)
+# "mt5_demo" -> Real MT5 demo account execution
 EXECUTION_MODE = os.getenv("EXECUTION_MODE", "paper").lower()
 
-# ── MT5 Broker Credentials (Day 31 Cleaned) ──────────────────
+# ── Use Scanner ────────────────────────────────────────────────
+USE_SCANNER = os.getenv("USE_SCANNER", "false").lower() == "true"
+
+# ── Approval Mode ──────────────────────────────────────────────
+# 1 = analysis only (AI watches, never trades)
+# 2 = supervised (AI suggests, human must approve each trade)
+# 3 = autonomous (default — no human gate)
+APPROVAL_MODE = int(os.getenv("APPROVAL_MODE", "3"))
+
+# ── MT5 Broker Credentials ─────────────────────────────────────
 MT5_LOGIN_ENV = os.getenv("MT5_LOGIN", "0")
 MT5_LOGIN = int(MT5_LOGIN_ENV) if MT5_LOGIN_ENV and MT5_LOGIN_ENV.isdigit() and MT5_LOGIN_ENV != "0" else None
-
 MT5_PASSWORD = os.getenv("MT5_PASSWORD")
-MT5_SERVER   = os.getenv("MT5_SERVER")
-MT5_PATH     = os.getenv("MT5_PATH")  # Optional: MT5 terminal.exe path override
+MT5_SERVER = os.getenv("MT5_SERVER")
+MT5_PATH = os.getenv("MT5_PATH")  # Optional: MT5 terminal.exe path override
+MT5_INVESTOR = os.getenv("MT5_INVESTOR")
+
+# ── Telegram ───────────────────────────────────────────────────
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+ENABLE_TELEGRAM = os.getenv("ENABLE_TELEGRAM", "false").lower() == "true"
+
+# ── External API Keys ─────────────────────────────────────────
+ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "")
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "")
+FRED_API_KEY = os.getenv("FRED_API_KEY", "")
+
+# ── Retraining Settings ───────────────────────────────────────
+RETRAINING_INTERVAL = int(os.getenv("RETRAINING_INTERVAL", "24"))  # hours
+PERFORMANCE_THRESHOLD = float(os.getenv("PERFORMANCE_THRESHOLD", "0.55"))
+MIN_TRAINING_SAMPLES = int(os.getenv("MIN_TRAINING_SAMPLES", "100"))
+
+# ── SMTP / Email Alerts ────────────────────────────────────────
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+ALERT_RECIPIENTS = os.getenv("ALERT_RECIPIENTS", "")
+ALERT_WEBHOOK_URL = os.getenv("ALERT_WEBHOOK_URL", "")
+
+# ── Webhook ────────────────────────────────────────────────────
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
+WEBHOOK_PORT = int(os.getenv("WEBHOOK_PORT", "5000"))
+
+# ── Logging ────────────────────────────────────────────────────
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_MAX_SIZE = 10 * 1024 * 1024  # 10 MB
+LOG_BACKUP_COUNT = 5
 
 
-# ── Configuration Validation ─────────────────────────────────
+# ── Configuration Validation ───────────────────────────────────
 def validate_mt5_config() -> None:
-    """MT5 mode চালু করার আগে প্রয়োজনীয় credentials আছে কিনা চেক করে।"""
+    """Validate MT5 credentials before starting mt5_demo mode."""
     if EXECUTION_MODE == "mt5_demo":
         missing = []
         if not MT5_LOGIN:
@@ -77,47 +144,161 @@ def validate_mt5_config() -> None:
             missing.append("MT5_PASSWORD")
         if not MT5_SERVER:
             missing.append("MT5_SERVER")
-
         if missing:
-            raise ValueError(
-                f".env ফাইলে এই credentials গুলো missing: {', '.join(missing)}. "
-                f"অনুগ্রহ করে MT5_LOGIN, MT5_PASSWORD, এবং MT5_SERVER সঠিকভাবে সেট করুন।"
+            from core.exceptions import ConfigurationError
+            raise ConfigurationError(
+                f"MT5 credentials missing in .env: {', '.join(missing)}. "
+                f"Set MT5_LOGIN, MT5_PASSWORD, and MT5_SERVER."
             )
 
-# মেইন স্ক্রিপ্ট বা পাইপলাইনে রান করার আগে অটোমেটিক ভ্যালিডেশন চেক
-if EXECUTION_MODE == "mt5_demo":
-    validate_mt5_config()
-    # Add these to the existing Config class
+
+def validate_telegram_config() -> None:
+    """Validate Telegram credentials before enabling notifications."""
+    if ENABLE_TELEGRAM:
+        missing = []
+        if not TELEGRAM_TOKEN:
+            missing.append("TELEGRAM_TOKEN")
+        if not TELEGRAM_CHAT_ID:
+            missing.append("TELEGRAM_CHAT_ID")
+        if missing:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"Telegram enabled but credentials missing: {', '.join(missing)}. "
+                f"Notifications will be disabled."
+            )
+
+
 class Config:
-    # ... existing configuration ...
-    
-    # Forex data configuration
+    """Unified configuration class — merges all settings for modules
+    that prefer class-based access over module-level constants."""
+
+    # Project
+    PROJECT_NAME = PROJECT_NAME
+    PROJECT_ROOT = PROJECT_ROOT
+
+    # Paths
+    DATA_DIR = DATA_DIR
+    LOG_DIR = LOG_DIR
+    MODEL_DIR = MODEL_DIR
+    DB_PATH = DB_PATH
+    CHART_OUTPUT = CHART_OUTPUT
+    LOG_FILE = LOG_FILE
+
+    # Capital & Risk
+    INITIAL_BALANCE = INITIAL_BALANCE
+    INITIAL_CAPITAL = INITIAL_CAPITAL
+    RISK_PER_TRADE = RISK_PER_TRADE
+    MAX_DAILY_LOSS = MAX_DAILY_LOSS
+    MAX_OPEN_TRADES = MAX_OPEN_TRADES
+    MAX_POSITIONS = MAX_POSITIONS
+
+    # Market
+    MARKET = MARKET
+    DATA_SOURCE = DATA_SOURCE
+    SYMBOLS = SYMBOLS
+
+    # Timeframes
+    DEFAULT_TIMEFRAME = DEFAULT_TIMEFRAME
+    MTF_CHAIN = MTF_CHAIN
+
+    # Indicators
+    RSI_PERIOD = RSI_PERIOD
+    RSI_OVERBOUGHT = RSI_OVERBOUGHT
+    RSI_OVERSOLD = RSI_OVERSOLD
+    MA_FAST = MA_FAST
+    MA_SLOW = MA_SLOW
+    MA_TREND = MA_TREND
+    ATR_PERIOD = ATR_PERIOD
+
+    # S/R
+    SR_WINDOW = SR_WINDOW
+    SR_TOLERANCE = SR_TOLERANCE
+
+    # System
+    PAPER_BALANCE = PAPER_BALANCE
+    LOOP_INTERVAL_SEC = LOOP_INTERVAL_SEC
+    BACKUP_INTERVAL_MIN = BACKUP_INTERVAL_MIN
+    RECOVERY_COOLDOWN_MIN = RECOVERY_COOLDOWN_MIN
+    MONITORING_INTERVAL = MONITORING_INTERVAL
+
+    # Execution
+    EXECUTION_MODE = EXECUTION_MODE
+    USE_SCANNER = USE_SCANNER
+    APPROVAL_MODE = APPROVAL_MODE
+
+    # MT5
+    MT5_LOGIN = MT5_LOGIN
+    MT5_PASSWORD = MT5_PASSWORD
+    MT5_SERVER = MT5_SERVER
+    MT5_PATH = MT5_PATH
+
+    # Telegram
+    TELEGRAM_TOKEN = TELEGRAM_TOKEN
+    TELEGRAM_CHAT_ID = TELEGRAM_CHAT_ID
+    ENABLE_TELEGRAM = ENABLE_TELEGRAM
+
+    # LLM
+    GROQ_API_KEY = GROQ_API_KEY
+    GROQ_MODEL = GROQ_MODEL
+    GEMINI_API_KEY = GEMINI_API_KEY
+    GEMINI_MODEL = GEMINI_MODEL
+    ANTHROPIC_API_KEY = ANTHROPIC_API_KEY
+    OPENROUTER_API_KEY = OPENROUTER_API_KEY
+
+    # External APIs
+    ALPHA_VANTAGE_API_KEY = ALPHA_VANTAGE_API_KEY
+    FINNHUB_API_KEY = FINNHUB_API_KEY
+    TWELVE_DATA_API_KEY = TWELVE_DATA_API_KEY
+    FRED_API_KEY = FRED_API_KEY
+
+    # Retraining
+    RETRAINING_INTERVAL = RETRAINING_INTERVAL
+    PERFORMANCE_THRESHOLD = PERFORMANCE_THRESHOLD
+    MIN_TRAINING_SAMPLES = MIN_TRAINING_SAMPLES
+
+    # Logging
+    LOG_LEVEL = LOG_LEVEL
+    LOG_MAX_SIZE = LOG_MAX_SIZE
+    LOG_BACKUP_COUNT = LOG_BACKUP_COUNT
+
+    # Forex pairs for scanner/data updater
     FOREX_PAIRS = [
-        'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF',
-        'AUD/USD', 'USD/CAD', 'NZD/USD',
-        'EUR/GBP', 'EUR/JPY', 'GBP/JPY'
+        'EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF',
+        'AUDUSD', 'USDCAD', 'NZDUSD',
+        'EURGBP', 'EURJPY', 'GBPJPY'
     ]
-    
+
     # Data update configuration
-    DATA_UPDATE_TIME = "06:00"  # Daily update at 6 AM
+    DATA_UPDATE_TIME = "06:00"
     DATA_UPDATE_TIMEZONE = "UTC"
-    DATA_HISTORY_DAYS = 365 * 5  # 5 years of history
+    DATA_HISTORY_DAYS = 365 * 5
     DATA_UPDATE_RETRY_ATTEMPTS = 3
-    DATA_UPDATE_RETRY_DELAY = 300  # 5 minutes
-    
-    # API credentials (should be in environment variables)
-    OANDA_API_KEY = os.environ.get('OANDA_API_KEY')
-    OANDA_ACCOUNT_ID = os.environ.get('OANDA_ACCOUNT_ID')
-    
-    # Database configuration
+    DATA_UPDATE_RETRY_DELAY = 300
+
+    # Legacy OANDA keys (optional — not used by default)
+    OANDA_API_KEY = os.environ.get('OANDA_API_KEY', '')
+    OANDA_ACCOUNT_ID = os.environ.get('OANDA_ACCOUNT_ID', '')
+
+    # Database (legacy — system uses SQLite by default)
     DB_HOST = os.environ.get('DB_HOST', 'localhost')
     DB_PORT = os.environ.get('DB_PORT', '5432')
     DB_NAME = os.environ.get('DB_NAME', 'forex_ai')
     DB_USER = os.environ.get('DB_USER', 'postgres')
     DB_PASSWORD = os.environ.get('DB_PASSWORD', '')
-    
-    # Logging configuration
-    LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
-    LOG_FILE = 'logs/forex_ai.log'
-    LOG_MAX_SIZE = 10 * 1024 * 1024  # 10 MB
-    LOG_BACKUP_COUNT = 5
+
+    # SMTP
+    SMTP_HOST = SMTP_HOST
+    SMTP_PORT = SMTP_PORT
+    SMTP_USERNAME = SMTP_USERNAME
+    SMTP_PASSWORD = SMTP_PASSWORD
+    ALERT_RECIPIENTS = ALERT_RECIPIENTS
+    ALERT_WEBHOOK_URL = ALERT_WEBHOOK_URL
+
+    # Webhook
+    WEBHOOK_SECRET = WEBHOOK_SECRET
+    WEBHOOK_PORT = WEBHOOK_PORT
+
+
+# Auto-validate on import
+validate_mt5_config()
+validate_telegram_config()

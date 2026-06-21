@@ -1,19 +1,40 @@
 """
 Automated Model Retraining System
 Handles scheduled retraining, performance monitoring, and automatic updates
+
+NOTE: TensorFlow, sklearn, and schedule are OPTIONAL dependencies.
+      If they are not installed, this module gracefully degrades.
 """
 import os
+import json
 import logging
-import schedule
 import time
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import mean_squared_error, mean_absolute_error
-import tensorflow as tf
-from tensorflow import keras
+
+# Optional ML dependencies — the system works without them
+try:
+    import schedule
+    SCHEDULE_AVAILABLE = True
+except ImportError:
+    SCHEDULE_AVAILABLE = False
+
+try:
+    from sklearn.model_selection import TimeSeriesSplit
+    from sklearn.metrics import mean_squared_error, mean_absolute_error
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+
+try:
+    import tensorflow as tf
+    from tensorflow import keras
+    TF_AVAILABLE = True
+except ImportError:
+    TF_AVAILABLE = False
+
 from config import Config
 from data.automated_updater import data_updater
 from ai.model_versioning import model_manager
@@ -30,6 +51,9 @@ class AutomatedRetrainingSystem:
         
     def start_scheduled_retraining(self):
         """Start scheduled retraining job"""
+        if not SCHEDULE_AVAILABLE:
+            self.logger.warning("schedule package not installed — scheduled retraining disabled")
+            return
         schedule.every(self.retraining_interval).days.do(self._retrain_models)
         
         self.logger.info(f"Scheduled model retraining every {self.retraining_interval} days")

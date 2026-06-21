@@ -1,22 +1,16 @@
 # risk/risk_engine.py  —  Day 13 | Risk Engine
+# ============================================================
+# Uses core.constants for PIP_SIZE and CORRELATION_GROUPS —
+# no local duplicates. Key naming follows project convention:
+# "lot" (not "lot_size"), "risk_pc" (not "risk_percent").
+# ============================================================
 
 from utils.logger import get_logger
+from core.constants import PIP_SIZE, CORRELATION_GROUPS, get_pip_size, get_pip_value_usd, clean_symbol
 import json, os
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 log = get_logger("risk_engine")
-
-PIP_SIZE = {
-    "EURUSD": 0.0001, "GBPUSD": 0.0001,
-    "USDJPY": 0.01,   "USDCHF": 0.0001,
-    "AUDUSD": 0.0001, "USDCAD": 0.0001,
-    "DEFAULT": 0.0001,
-}
-
-CORRELATION_GROUPS = [
-    {"EURUSD", "GBPUSD", "AUDUSD", "NZDUSD"},
-    {"USDCHF", "USDJPY", "USDCAD"},
-]
 
 DAILY_LOG_PATH = "memory/daily_risk.json"
 
@@ -31,8 +25,8 @@ class RiskEngine:
 
     def __init__(self, balance: float = 1000.0, symbol: str = "EURUSD"):
         self.balance = balance
-        self.symbol  = self._clean(symbol)
-        self.pip     = PIP_SIZE.get(self.symbol, PIP_SIZE["DEFAULT"])
+        self.symbol  = clean_symbol(symbol)
+        self.pip     = get_pip_size(self.symbol)
         self._daily  = self._load_daily()
 
     def evaluate(self, signal: str, entry: float, atr: float, regime: dict | None = None) -> dict:
@@ -73,7 +67,7 @@ class RiskEngine:
         rr_ratio = round(tp_pips / sl_pips, 2) if sl_pips > 0 else 0
 
         risk_usd = round(self.balance * self.MAX_RISK_PC / 100, 2)
-        pip_val  = 10.0 if "JPY" not in self.symbol else 9.0
+        pip_val  = get_pip_value_usd(self.symbol)
         lot_raw  = risk_usd / (sl_pips * pip_val) if sl_pips > 0 else 0.01
         lot      = round(max(0.01, min(lot_raw, 100.0)), 2)
 
@@ -102,8 +96,9 @@ class RiskEngine:
     def _correlation_check(self) -> dict:
         open_pairs = set(self._daily.get("open_pairs", []))
         for group in CORRELATION_GROUPS:
-            if self.symbol in group and open_pairs & group:
-                return {"allowed": False, "reason": f"Correlation conflict with {open_pairs & group}"}
+            group_set = set(group)
+            if self.symbol in group_set and open_pairs & group_set:
+                return {"allowed": False, "reason": f"Correlation conflict with {open_pairs & group_set}"}
         return {"allowed": True, "reason": "OK"}
 
     def _load_daily(self) -> dict:
@@ -147,13 +142,13 @@ class RiskEngine:
         else:
             self._daily["total_win_usd"] = self._daily.get("total_win_usd", 0) + pnl_usd
         self._daily.setdefault("trades", []).append(
-            {"symbol": symbol, "pnl_usd": round(pnl_usd, 2), "time": datetime.utcnow().isoformat()}
+            {"symbol": symbol, "pnl_usd": round(pnl_usd, 2), "time": datetime.now(timezone.utc).isoformat()}
         )
         self._save_daily(self._daily)
 
     def sync_open_positions(self, open_pairs: list[str]) -> None:
-        """Restart/recovery-এর পরে daily risk state-কে actual open positions-এর সাথে sync করো।"""
-        clean_pairs = sorted({self._clean(pair) for pair in open_pairs if pair})
+        """Sync daily risk state with actual open positions after restart/recovery."""
+        clean_pairs = sorted({clean_symbol(pair) for pair in open_pairs if pair})
         self._daily["open_pairs"] = clean_pairs
         self._daily["open_trades"] = len(clean_pairs)
         self._save_daily(self._daily)
@@ -178,7 +173,7 @@ class RiskEngine:
                 "lot": 0, "sl_pips": 0, "tp_pips": 0, "rr_ratio": 0}
 
     def _clean(self, symbol: str) -> str:
-        return symbol.upper().replace("/", "").replace("=X", "")[:6]
+        return clean_symbol(symbol)
 
     def print_summary(self, result: dict) -> None:
         bar  = "═" * 44

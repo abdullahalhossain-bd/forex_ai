@@ -3,13 +3,22 @@ Automated Forex Data Update System
 Handles daily data refresh, validation, and gap filling
 """
 import os
+import json
 import logging
+import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import yfinance as yf
-import oandapyV20
-from oandapyV20.endpoints import instruments, accounts
+
+# OANDA is optional — only needed if OANDA_API_KEY is configured
+try:
+    import oandapyV20
+    from oandapyV20.endpoints import instruments, accounts
+    OANDA_AVAILABLE = True
+except ImportError:
+    OANDA_AVAILABLE = False
+
 from config import Config
 
 class ForexDataUpdater:
@@ -23,7 +32,7 @@ class ForexDataUpdater:
         
         # Initialize OANDA API client if credentials available
         self.oanda_client = None
-        if hasattr(self.config, 'OANDA_API_KEY') and self.config.OANDA_API_KEY:
+        if OANDA_AVAILABLE and hasattr(self.config, 'OANDA_API_KEY') and self.config.OANDA_API_KEY:
             try:
                 self.oanda_client = oandapyV20.API(
                     access_token=self.config.OANDA_API_KEY,
@@ -242,8 +251,8 @@ class ForexDataUpdater:
         if data.isnull().any().any():
             self.logger.warning(f"Missing values detected in {pair}")
             # Forward fill then backward fill
-            data.fillna(method='ffill', inplace=True)
-            data.fillna(method='bfill', inplace=True)
+            data.ffill(inplace=True)
+            data.bfill(inplace=True)
         
         # Validate price relationships
         invalid_rows = (
@@ -288,10 +297,10 @@ class ForexDataUpdater:
             # Forward fill from last known values
             combined = pd.concat([data, missing_df])
             combined.sort_index(inplace=True)
-            combined.fillna(method='ffill', inplace=True)
+            combined.ffill(inplace=True)
             
             # Also fill any remaining NaNs with backward fill
-            combined.fillna(method='bfill', inplace=True)
+            combined.bfill(inplace=True)
             
             # Save updated data
             self.save_data(pair, combined)

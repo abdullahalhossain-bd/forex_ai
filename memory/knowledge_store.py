@@ -12,12 +12,66 @@ import uuid
 from pathlib import Path
 from datetime import datetime
 
+from utils.logger import get_logger
+log = get_logger("knowledge_store")
+
+CHROMA_AVAILABLE = False
+_chroma_import_error = ""
+
 try:
     import chromadb
     from chromadb.utils import embedding_functions
     CHROMA_AVAILABLE = True
-except ImportError:
-    CHROMA_AVAILABLE = False
+except ImportError as e:
+    _chroma_import_error = str(e)
+
+
+def _make_embedding_function():
+    """
+    Embedding function তৈরি করো।
+    - আগে ChromaDB-র built-in ONNX embedding ব্যবহার করো (HuggingFace লাগে না)
+    - না পেলে SentenceTransformer try করো
+    - সব fail হলে None return করো
+    """
+    if not CHROMA_AVAILABLE:
+        return None
+
+    # Option 1: ChromaDB built-in ONNX embedding (no HuggingFace needed)
+    try:
+        ef = embedding_functions.ONNXMiniLM_L6_V2()
+        log.info("[KnowledgeStore] Using built-in ONNX embedding (no HuggingFace needed)")
+        return ef
+    except Exception as e:
+        log.warning(f"[KnowledgeStore] ONNX embedding failed: {e}")
+
+    # Option 2: SentenceTransformer (local cache চেক করে)
+    try:
+        import os
+        from sentence_transformers import SentenceTransformer as _ST
+
+        model_name = "all-MiniLM-L6-v2"
+        cache_dir = os.path.join(
+            os.path.expanduser("~"),
+            ".cache", "torch", "sentence_transformers",
+            model_name.replace("/", "_"),
+        )
+        model_path = cache_dir if os.path.isdir(cache_dir) else model_name
+        ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=model_path
+        )
+        log.info(f"[KnowledgeStore] Using SentenceTransformer embedding: {model_path}")
+        return ef
+    except Exception as e:
+        log.warning(f"[KnowledgeStore] SentenceTransformer embedding failed: {e}")
+
+    # Option 3: ChromaDB default embedding (simplest fallback)
+    try:
+        ef = embedding_functions.DefaultEmbeddingFunction()
+        log.info("[KnowledgeStore] Using ChromaDB DefaultEmbeddingFunction")
+        return ef
+    except Exception as e:
+        log.warning(f"[KnowledgeStore] All embedding options failed: {e}")
+        return None
 
 
 class KnowledgeStore:
@@ -30,37 +84,45 @@ class KnowledgeStore:
 
     def __init__(self, path: str = "memory/chroma_db"):
         if not CHROMA_AVAILABLE:
-            raise ImportError(
-                "ChromaDB not installed.\n"
-                "Run: pip install chromadb sentence-transformers"
+            log.warning(
+                f"[KnowledgeStore] ChromaDB not installed — knowledge store disabled.\n"
+                f"  To enable: pip install chromadb\n"
+                f"  Error: {_chroma_import_error}"
             )
+            self._disabled = True
+            self.collection = None
+            return
 
+        self._disabled = False
         Path(path).mkdir(parents=True, exist_ok=True)
 
-        self.client = chromadb.PersistentClient(path=path)
+        try:
+            self.client = chromadb.PersistentClient(path=path)
 
-        self.ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2"
-        )
+            self.ef = _make_embedding_function()
 
-        self.collection = self.client.get_or_create_collection(
-            name="trading_memory",
-            embedding_function=self.ef,
-        )
+            collection_kwargs = {"name": "trading_memory"}
+            if self.ef is not None:
+                collection_kwargs["embedding_function"] = self.ef
 
-        print(f"✅ KnowledgeStore ready | Memories: {self.collection.count()}")
+            self.collection = self.client.get_or_create_collection(**collection_kwargs)
+            log.info(f"[KnowledgeStore] Ready | Memories: {self.collection.count()}")
+
+        except Exception as e:
+            log.error(f"[KnowledgeStore] Init failed: {e} — knowledge store disabled")
+            self._disabled = True
+            self.collection = None
+
+    def _is_ready(self) -> bool:
+        return not self._disabled and self.collection is not None
 
     # ── Add Memories ───────────────────────────────────────────
 
-    def add_memory(self, text: str, metadata: dict = None) -> str:
-        """
-        যেকোনো trading knowledge save করো।
+    def add_memory(self, text: str, metadata: dict = None) -> str | None:
+        """যেকোনো trading knowledge save করো।"""
+        if not self._is_ready():
+            return None
 
-        store.add_memory(
-            "EURUSD bullish engulfing at daily support. Result: WIN +45 pips.",
-            metadata={"type": "trade", "result": "WIN", "pair": "EURUSD"}
-        )
-        """
         mem_id = str(uuid.uuid4())
         meta = {
             "date": datetime.now().isoformat(),
@@ -69,24 +131,19 @@ class KnowledgeStore:
         if metadata:
             meta.update(metadata)
 
-        self.collection.add(
-            documents=[text],
-            metadatas=[meta],
-            ids=[mem_id],
-        )
-        return mem_id
+        try:
+            self.collection.add(
+                documents=[text],
+                metadatas=[meta],
+                ids=[mem_id],
+            )
+            return mem_id
+        except Exception as e:
+            log.error(f"[KnowledgeStore] add_memory failed: {e}")
+            return None
 
-    def add_trade_memory(self, trade: dict, result: str, lesson: str):
-        """
-        Trade শেষে automatically memory তৈরি করো।
-
-        trade = {
-            "pair": "EURUSD", "signal": "BUY",
-            "entry": 1.085, "rsi": 35,
-            "pattern": "hammer", "regime": "TRENDING",
-            "confidence": 75
-        }
-        """
+    def add_trade_memory(self, trade: dict, result: str, lesson: str) -> str | None:
+        """Trade শেষে automatically memory তৈরি করো।"""
         text = (
             f"{trade.get('pair')} {trade.get('signal')} trade. "
             f"Regime: {trade.get('regime', 'unknown')}. "
@@ -96,7 +153,6 @@ class KnowledgeStore:
             f"Result: {result}. "
             f"Lesson: {lesson}"
         )
-
         return self.add_memory(text, metadata={
             "type":       "trade",
             "pair":       trade.get("pair", ""),
@@ -107,59 +163,47 @@ class KnowledgeStore:
             "confidence": str(trade.get("confidence", 0)),
         })
 
-    def add_rule(self, rule: str):
+    def add_rule(self, rule: str) -> str | None:
         """Trading rule permanently store করো।"""
         return self.add_memory(rule, metadata={"type": "rule"})
 
-    def add_lesson(self, lesson: str, pair: str = ""):
+    def add_lesson(self, lesson: str, pair: str = "") -> str | None:
         """ভুল থেকে শেখা lesson store করো।"""
         return self.add_memory(lesson, metadata={"type": "lesson", "pair": pair})
 
     # ── Search ────────────────────────────────────────────────
 
     def search_memory(self, query: str, limit: int = 3) -> list[dict]:
-        """
-        Current situation-এর মতো past cases খুঁজে দাও।
-
-        results = store.search_memory(
-            "EURUSD bearish trend RSI low near support hammer pattern"
-        )
-        """
-        if self.collection.count() == 0:
+        """Current situation-এর মতো past cases খুঁজে দাও।"""
+        if not self._is_ready() or self.collection.count() == 0:
             return []
 
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=min(limit, self.collection.count()),
-        )
+        try:
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=min(limit, self.collection.count()),
+            )
 
-        output = []
-        docs      = results.get("documents", [[]])[0]
-        metas     = results.get("metadatas", [[]])[0]
-        distances = results.get("distances", [[]])[0]
+            output = []
+            docs      = results.get("documents", [[]])[0]
+            metas     = results.get("metadatas", [[]])[0]
+            distances = results.get("distances", [[]])[0]
 
-        for doc, meta, dist in zip(docs, metas, distances):
-            similarity = round((1 - dist) * 100, 1)
-            output.append({
-                "memory":     doc,
-                "metadata":   meta,
-                "similarity": similarity,
-            })
+            for doc, meta, dist in zip(docs, metas, distances):
+                similarity = round((1 - dist) * 100, 1)
+                output.append({
+                    "memory":     doc,
+                    "metadata":   meta,
+                    "similarity": similarity,
+                })
+            return output
 
-        return output
+        except Exception as e:
+            log.error(f"[KnowledgeStore] search_memory failed: {e}")
+            return []
 
     def search_similar_trades(self, current: dict) -> list[dict]:
-        """
-        Current market condition-এর মতো past trades খুঁজো।
-
-        current = {
-            "pair": "EURUSD",
-            "trend": "bearish",
-            "rsi": 35,
-            "pattern": "hammer",
-            "regime": "TRENDING",
-        }
-        """
+        """Current market condition-এর মতো past trades খুঁজো।"""
         query = (
             f"{current.get('pair', '')} "
             f"{current.get('trend', '')} trend "
@@ -172,10 +216,11 @@ class KnowledgeStore:
     # ── Bulk Seed ─────────────────────────────────────────────
 
     def seed_trading_rules(self):
-        """
-        Core trading rules একবার store করো।
-        AI এগুলো সবসময় মনে রাখবে।
-        """
+        """Core trading rules একবার store করো।"""
+        if not self._is_ready():
+            log.warning("[KnowledgeStore] Skipping seed — store not ready")
+            return
+
         rules = [
             "Never trade against the higher timeframe trend. If daily is bearish, avoid buying on lower timeframes.",
             "Never enter immediately after high-impact news events. Wait at least 30 minutes.",
@@ -197,18 +242,15 @@ class KnowledgeStore:
         for rule in rules:
             self.add_rule(rule)
 
-        print(f"✅ {len(rules)} trading rules stored in knowledge base")
+        log.info(f"[KnowledgeStore] {len(rules)} trading rules stored in knowledge base")
 
     # ── Context for LLM ───────────────────────────────────────
 
     def get_context_for_llm(self, current_condition: dict) -> str:
-        """
-        LLM prompt-এ যোগ করার জন্য past experience summary।
+        """LLM prompt-এ যোগ করার জন্য past experience summary।"""
+        if not self._is_ready():
+            return "Knowledge store unavailable."
 
-        Usage in ai_analyst.py:
-            memory_context = store.get_context_for_llm(current)
-            prompt = f"...{memory_context}..."
-        """
         memories = self.search_similar_trades(current_condition)
 
         if not memories:
@@ -225,9 +267,10 @@ class KnowledgeStore:
     # ── Stats ─────────────────────────────────────────────────
 
     def stats(self) -> dict:
-        count = self.collection.count()
-        return {"total_memories": count}
+        if not self._is_ready():
+            return {"total_memories": 0, "status": "disabled"}
+        return {"total_memories": self.collection.count(), "status": "ready"}
 
     def print_stats(self):
         s = self.stats()
-        print(f"\n🧠 KnowledgeStore: {s['total_memories']} memories stored")
+        log.info(f"[KnowledgeStore] {s['total_memories']} memories stored | status={s['status']}")

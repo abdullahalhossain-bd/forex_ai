@@ -1,6 +1,10 @@
 # agents/decision_agent.py  —  Day 42 (Master-Aware) + Day 53 (Dynamic Confidence Engine)
 
-from learning.confidence_engine import ConfidenceEngine
+try:
+    from learning.confidence_engine import ConfidenceEngine
+except ImportError:
+    ConfidenceEngine = None
+
 from utils.logger import get_logger
 
 log = get_logger("decision_agent")
@@ -31,8 +35,8 @@ class DecisionAgent:
     MIN_CONSENSUS = 2
 
     def __init__(self):
-        # Day 53 — pattern-aware dynamic confidence scorer
-        self.confidence_engine = ConfidenceEngine()
+        # Day 53 — pattern-aware dynamic confidence scorer (optional)
+        self.confidence_engine = ConfidenceEngine() if ConfidenceEngine else None
 
     def decide(
         self,
@@ -91,15 +95,21 @@ class DecisionAgent:
                 conflict_result.get("recommendation", ""),
             ], pattern=pattern, pair=pair, timeframe=timeframe, regime=regime_label)
 
-        # Weighted voting
+        # Weighted voting — normalize STRONG_BUY/STRONG_SELL to BUY/SELL
         votes = []
-        if master_sig in ("BUY", "SELL"):
-            votes += [master_sig] * 3
-        llm_norm = "NO TRADE" if llm_signal == "WAIT" else llm_signal
-        if llm_norm in ("BUY", "SELL"):
-            votes += [llm_norm] * 2
-        if rule_signal in ("BUY", "SELL"):
-            votes += [rule_signal]
+        if master_sig in ("BUY", "STRONG_BUY"):
+            votes += ["BUY"] * 3
+        elif master_sig in ("SELL", "STRONG_SELL"):
+            votes += ["SELL"] * 3
+        llm_norm = "NO TRADE" if llm_signal in ("WAIT", "HOLD") else llm_signal
+        if llm_norm in ("BUY", "STRONG_BUY"):
+            votes += ["BUY"] * 2
+        elif llm_norm in ("SELL", "STRONG_SELL"):
+            votes += ["SELL"] * 2
+        if rule_signal in ("BUY", "STRONG_BUY"):
+            votes += ["BUY"]
+        elif rule_signal in ("SELL", "STRONG_SELL"):
+            votes += ["SELL"]
 
         buy_votes  = votes.count("BUY")
         sell_votes = votes.count("SELL")
@@ -159,7 +169,7 @@ class DecisionAgent:
         # Day 53 — Dynamic Confidence Engine final pass
         # ──────────────────────────────────────────────────────
         confidence_engine_result = None
-        if decision in ("BUY", "SELL"):
+        if decision in ("BUY", "SELL") and self.confidence_engine:
             confidence_engine_result = self.confidence_engine.adjust_decision(
                 signal          = decision,
                 base_confidence = adj_conf,

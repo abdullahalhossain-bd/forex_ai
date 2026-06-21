@@ -1,29 +1,25 @@
 # execution/paper_trader.py  —  Day 17 | Paper Trading Engine
 # ============================================================
-# বাস্তব money ছাড়া পূর্ণ trade lifecycle simulate করে:
+# Full virtual trade lifecycle simulation:
 #   Signal → Virtual Order → Price Update → SL/TP/Timeout → Close → DB Save
 #
-# Bonus realism (10/10 checklist থেকে):
+# Realism features:
 #   1. Slippage simulation
 #   2. Spread simulation
 #   3. Commission
 #   4. Trade timeout (48h)
 #   5. Trade context snapshot (trend/RSI/pattern/session at entry)
+#   6. Balance restoration from DB on restart
+#   7. Multiple TP levels (partial close)
+#   8. Breakeven and trailing stop support
 # ============================================================
 
 from datetime import datetime, timedelta, timezone
 from utils.logger import get_logger
 from database.db import TraderDB
+from core.constants import PIP_SIZE, get_pip_size, get_pip_value_usd, clean_symbol
 
 log = get_logger("paper_trader")
-
-# Symbol → pip size (risk_engine.py-এর সাথে consistent রাখা হয়েছে)
-PIP_SIZE = {
-    "EURUSD": 0.0001, "GBPUSD": 0.0001,
-    "USDJPY": 0.01,   "USDCHF": 0.0001,
-    "AUDUSD": 0.0001, "USDCAD": 0.0001,
-    "DEFAULT": 0.0001,
-}
 
 # Per-pair spread in pips (typical retail broker average)
 SPREAD_PIPS = {
@@ -52,10 +48,10 @@ class PaperTrader:
 
     def __init__(self, starting_balance: float = None, db: TraderDB = None):
         self.starting_balance = starting_balance or self.STARTING_BALANCE
-        self.balance = self.starting_balance
         self.db = db or TraderDB()
         self.open_positions: list[dict] = []
         self._restore_open_positions()
+        self._restore_balance_from_db()
         log.info(f"PaperTrader ready | Balance: ${self.balance:.2f} | "
                  f"Open positions restored: {len(self.open_positions)}")
 
@@ -241,11 +237,10 @@ class PaperTrader:
         """
         Returns (pnl_pips, gross_pnl_usd).
 
-        Standard FX convention: 1.0 lot, non-JPY pair → ~$10 per pip.
-        Lot size scales linearly (0.01 lot = $0.10/pip, 0.10 lot = $1/pip, etc).
+        Standard FX convention: pip value scales with lot size.
         """
         symbol = trade["pair"]
-        pip = PIP_SIZE.get(symbol, PIP_SIZE["DEFAULT"])
+        pip = get_pip_size(symbol)
 
         if trade["type"] == "BUY":
             diff = exit_price - trade["entry"]
@@ -253,7 +248,7 @@ class PaperTrader:
             diff = trade["entry"] - exit_price
 
         pnl_pips = diff / pip
-        pip_value_per_lot = 10.0 if "JPY" not in symbol else 9.0  # $ per pip, 1.0 standard lot
+        pip_value_per_lot = get_pip_value_usd(symbol)
         gross_pnl = round(pnl_pips * pip_value_per_lot * trade["lot"], 2)
         return pnl_pips, gross_pnl
 
@@ -286,10 +281,25 @@ class PaperTrader:
     # ─────────────────────────────────────────────
 
     def _restore_open_positions(self) -> None:
-        """App restart হলেও open trades হারিয়ে না যাওয়ার জন্য DB থেকে restore করো।"""
+        """Restore open trades from DB so they survive app restarts."""
         df = self.db.get_open_trades()
         for _, row in df.iterrows():
             self.open_positions.append(row.to_dict())
+
+    def _restore_balance_from_db(self) -> None:
+        """Restore balance from DB trade history instead of resetting to starting_balance."""
+        try:
+            stats = self.db.get_account_stats(starting_balance=self.starting_balance)
+            db_balance = stats.get("balance", self.starting_balance)
+            # Only use DB balance if there are closed trades (otherwise it's just the starting value)
+            if stats.get("total_trades", 0) > 0:
+                self.balance = round(db_balance, 2)
+                log.info(f"[PaperTrader] Balance restored from DB: ${self.balance:.2f}")
+            else:
+                self.balance = self.starting_balance
+        except Exception as e:
+            log.warning(f"[PaperTrader] Could not restore balance from DB: {e}. Using starting balance.")
+            self.balance = self.starting_balance
 
     def has_open_position(self, pair: str, trade_type: str | None = None) -> bool:
         symbol = self._clean_symbol(pair)
@@ -313,13 +323,87 @@ class PaperTrader:
         return round(random.uniform(0, self.SLIPPAGE_PIPS_MAX), 2)
 
     def _pips_to_price(self, symbol: str, pips: float) -> float:
-        return pips * PIP_SIZE.get(symbol, PIP_SIZE["DEFAULT"])
+        return pips * get_pip_size(symbol)
 
     def _spread_cost_usd(self, symbol: str, lot: float) -> float:
         """Full round-trip spread cost in USD for this trade's lot size."""
         spread_pips = SPREAD_PIPS.get(symbol, SPREAD_PIPS["DEFAULT"])
-        pip_value_per_lot = 10.0 if "JPY" not in symbol else 9.0
+        pip_value_per_lot = get_pip_value_usd(symbol)
         return round(spread_pips * pip_value_per_lot * lot, 2)
 
     def _clean_symbol(self, symbol: str) -> str:
-        return symbol.upper().replace("/", "").replace("=X", "").replace("USDT", "USD")[:6]
+        return clean_symbol(symbol)
+
+    # ─────────────────────────────────────────────
+    # 6. ADVANCED TRADE MANAGEMENT
+    # ─────────────────────────────────────────────
+
+    def apply_breakeven(self, trade: dict, breakeven_price: float) -> bool:
+        """Move SL to entry (breakeven) for a given trade."""
+        if trade not in self.open_positions:
+            return False
+        trade["sl"] = round(breakeven_price, 5)
+        log.info(f"[PaperTrader] Breakeven applied #{trade['id']} {trade['pair']} SL→{breakeven_price:.5f}")
+        return True
+
+    def apply_trailing_stop(self, trade: dict, new_sl: float) -> bool:
+        """Trail SL to a new level (only moves in favorable direction)."""
+        if trade not in self.open_positions:
+            return False
+        current_sl = trade.get("sl", 0)
+        if trade["type"] == "BUY":
+            if new_sl > current_sl:
+                trade["sl"] = round(new_sl, 5)
+                log.info(f"[PaperTrader] Trailing SL #{trade['id']} BUY SL→{new_sl:.5f}")
+                return True
+        elif trade["type"] == "SELL":
+            if new_sl < current_sl or current_sl == 0:
+                trade["sl"] = round(new_sl, 5)
+                log.info(f"[PaperTrader] Trailing SL #{trade['id']} SELL SL→{new_sl:.5f}")
+                return True
+        return False
+
+    def partial_close(self, trade: dict, close_percent: float, price: float) -> dict | None:
+        """Partially close a trade (for multiple TP levels)."""
+        if trade not in self.open_positions:
+            return None
+        if close_percent <= 0 or close_percent > 100:
+            return None
+
+        original_lot = trade["lot"]
+        close_lot = round(original_lot * close_percent / 100, 2)
+        if close_lot < 0.01:
+            close_lot = 0.01
+
+        # Calculate PnL for the closed portion
+        pnl_pips, gross_pnl = self._calculate_pnl(trade, price)
+        proportion = close_lot / original_lot if original_lot > 0 else 1.0
+        partial_pnl = round(gross_pnl * proportion, 2)
+        commission = round(self.COMMISSION_PER_LOT * close_lot, 2)
+        net_pnl = round(partial_pnl - commission, 2)
+
+        # Update trade lot
+        remaining_lot = round(original_lot - close_lot, 2)
+        if remaining_lot <= 0:
+            # Close entire trade
+            return self.close_trade(trade, "PARTIAL_FULL", price)
+
+        trade["lot"] = remaining_lot
+        self.balance = round(self.balance + net_pnl, 2)
+
+        log.info(
+            f"[PaperTrader] Partial close #{trade['id']} {trade['pair']} "
+            f"{close_percent}% ({close_lot} lots) @ {price:.5f} | "
+            f"PnL: ${net_pnl} | Remaining: {remaining_lot} lots"
+        )
+
+        return {
+            "trade_id": trade["id"],
+            "pair": trade["pair"],
+            "type": trade["type"],
+            "close_percent": close_percent,
+            "close_lot": close_lot,
+            "remaining_lot": remaining_lot,
+            "pnl": net_pnl,
+            "exit_price": price,
+        }

@@ -934,5 +934,405 @@
     "outcome": null,
     "pnl_pips": null,
     "result": null
+  },
+  {
+    "id": 37,
+    "timestamp": "2026-06-21T18:44:59.900845",
+    "symbol": "EURUSD",
+    "timeframe": "15m",
+    "decision": "NO TRADE",
+    "confidence": 0,
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "TRENDING",
+    "trend": "sideways",
+    "rsi": 41.98,
+    "patterns": [
+      "bearish_engulfing"
+    ],
+    "rule_signal": "STRONG_SELL",
+    "llm_signal": "SELL",
+    "reasons": [
+      "Risk rejected: None"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  },
+  {
+    "id": 38,
+    "timestamp": "2026-06-21T18:45:10.398644",
+    "symbol": "GBPUSD",
+    "timeframe": "15m",
+    "decision": "NO TRADE",
+    "confidence": 0,
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "RANGING",
+    "trend": "bullish",
+    "rsi": 56.33,
+    "patterns": [],
+    "rule_signal": "STRONG_SELL",
+    "llm_signal": "SELL",
+    "reasons": [
+      "Risk rejected: None"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  },
+  {
+    "id": 39,
+    "timestamp": "2026-06-21T18:45:21.256464",
+    "symbol": "USDJPY",
+    "timeframe": "15m",
+    "decision": "NO TRADE",
+    "confidence": 0,
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "TRENDING",
+    "trend": "strong_bullish",
+    "rsi": 51.18,
+    "patterns": [
+      "bullish_engulfing",
+      "bearish_engulfing"
+    ],
+    "rule_signal": "STRONG_BUY",
+    "llm_signal": "BUY",
+    "reasons": [
+      "Risk rejected: None"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  },
+  {
+    "id": 40,
+    "timestamp": "2026-06-21T19:02:34.904427",
+    "symbol": "EURUSD",
+    "timeframe": "15m",
+    "decision": "NO TRADE",
+    "confidence": 0,
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "TRENDING",
+    "trend": "sideways",
+    "rsi": 41.98,
+    "patterns": [
+      "bearish_engulfing"
+    ],
+    "rule_signal": "STRONG_SELL",
+    "llm_signal": "SELL",
+    "reasons": [
+      "Risk rejected: None"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  },
+  {
+    "id": 41,
+    "timestamp": "2026-06-21T19:03:11.666099",
+    "symbol": "GBPUSD",
+    "timeframe": "15m",
+    "decision": "NO TRADE",
+    "confidence": 0,
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "RANGING",
+    "trend": "bullish",
+    "rsi": 56.33,
+    "patterns": [],
+    "rule_signal": "STRONG_SELL",
+    "llm_signal": "SELL",
+    "reasons": [
+      "Risk rejected: None"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  },
+  {
+    "id": 42,
+    "timestamp": "2026-06-21T19:03:33.016090",
+    "symbol": "USDJPY",
+    "timeframe": "15m",
+    "decision": "NO TRADE",
+    "confidence": 0,
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "TRENDING",
+    "trend": "strong_bullish",
+    "rsi": 51.18,
+    "patterns": [
+      "bullish_engulfing",
+      "bearish_engulfing"
+    ],
+    "rule_signal": "STRONG_BUY",
+    "llm_signal": "BUY",
+    "reasons": [
+      "Risk rejected: None"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  },
+  {
+    "id": 43,
+    "timestamp": "2026-06-21T19:08:10.404895",
+    "symbol": "EURUSD",
+    "timeframe": "15m",
+    "decision": "NO TRADE",
+    "confidence": 0,
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "TRENDING",
+    "trend": "sideways",
+    "rsi": 41.98,
+    "patterns": [
+      "bearish_engulfing"
+    ],
+    "rule_signal": "STRONG_SELL",
+    "llm_signal": "SELL",
+    "reasons": [
+      "Risk rejected: None"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  },
+  {
+    "id": 44,
+    "timestamp": "2026-06-21T19:08:24.248773",
+    "symbol": "GBPUSD",
+    "timeframe": "15m",
+    "decision": "NO TRADE",
+    "confidence": 0,
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "RANGING",
+    "trend": "bullish",
+    "rsi": 56.33,
+    "patterns": [],
+    "rule_signal": "STRONG_SELL",
+    "llm_signal": "SELL",
+    "reasons": [
+      "Risk rejected: None"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  },
+  {
+    "id": 45,
+    "timestamp": "2026-06-21T19:08:38.030749",
+    "symbol": "USDJPY",
+    "timeframe": "15m",
+    "decision": "NO TRADE",
+    "confidence": 0,
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "TRENDING",
+    "trend": "strong_bullish",
+    "rsi": 51.18,
+    "patterns": [
+      "bullish_engulfing",
+      "bearish_engulfing"
+    ],
+    "rule_signal": "STRONG_BUY",
+    "llm_signal": "BUY",
+    "reasons": [
+      "Risk rejected: None"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  },
+  {
+    "id": 46,
+    "timestamp": "2026-06-21T19:14:36.784642",
+    "symbol": "EURUSD",
+    "timeframe": "15m",
+    "decision": "NO TRADE",
+    "confidence": 0,
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "TRENDING",
+    "trend": "sideways",
+    "rsi": 41.98,
+    "patterns": [
+      "bearish_engulfing"
+    ],
+    "rule_signal": "STRONG_SELL",
+    "llm_signal": "SELL",
+    "reasons": [
+      "Risk rejected: None"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  },
+  {
+    "id": 47,
+    "timestamp": "2026-06-21T19:14:48.544823",
+    "symbol": "GBPUSD",
+    "timeframe": "15m",
+    "decision": "NO TRADE",
+    "confidence": 0,
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "RANGING",
+    "trend": "bullish",
+    "rsi": 56.33,
+    "patterns": [],
+    "rule_signal": "STRONG_SELL",
+    "llm_signal": "SELL",
+    "reasons": [
+      "Risk rejected: None"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  },
+  {
+    "id": 48,
+    "timestamp": "2026-06-21T19:15:02.539290",
+    "symbol": "USDJPY",
+    "timeframe": "15m",
+    "decision": "NO TRADE",
+    "confidence": 0,
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "TRENDING",
+    "trend": "strong_bullish",
+    "rsi": 51.18,
+    "patterns": [
+      "bullish_engulfing",
+      "bearish_engulfing"
+    ],
+    "rule_signal": "STRONG_BUY",
+    "llm_signal": "BUY",
+    "reasons": [
+      "Risk rejected: None"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  },
+  {
+    "id": 49,
+    "timestamp": "2026-06-21T19:37:11.172133",
+    "symbol": "EURUSD",
+    "timeframe": "15m",
+    "decision": "NO TRADE",
+    "confidence": 0,
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "TRENDING",
+    "trend": "sideways",
+    "rsi": 41.98,
+    "patterns": [
+      "bearish_engulfing"
+    ],
+    "rule_signal": "STRONG_SELL",
+    "llm_signal": "SELL",
+    "reasons": [
+      "Risk rejected: None"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  },
+  {
+    "id": 50,
+    "timestamp": "2026-06-21T19:37:23.279444",
+    "symbol": "GBPUSD",
+    "timeframe": "15m",
+    "decision": "NO TRADE",
+    "confidence": 0,
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "RANGING",
+    "trend": "bullish",
+    "rsi": 56.33,
+    "patterns": [],
+    "rule_signal": "STRONG_SELL",
+    "llm_signal": "SELL",
+    "reasons": [
+      "Risk rejected: None"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  },
+  {
+    "id": 51,
+    "timestamp": "2026-06-21T19:37:35.944260",
+    "symbol": "USDJPY",
+    "timeframe": "15m",
+    "decision": "NO TRADE",
+    "confidence": 0,
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "TRENDING",
+    "trend": "strong_bullish",
+    "rsi": 51.18,
+    "patterns": [
+      "bullish_engulfing",
+      "bearish_engulfing"
+    ],
+    "rule_signal": "STRONG_BUY",
+    "llm_signal": "BUY",
+    "reasons": [
+      "Risk rejected: None"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
   }
 ]

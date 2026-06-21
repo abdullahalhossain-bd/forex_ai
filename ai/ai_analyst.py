@@ -30,7 +30,7 @@ class AIAnalyst:
 
     def __init__(self):
         self._groq_client   = None
-        self._gemini_model  = None
+        self._gemini_client = None  # google.genai Client object
         self._init_clients()
 
     def _init_clients(self):
@@ -44,13 +44,12 @@ class AIAnalyst:
             except Exception as e:
                 log.warning(f"Groq init failed: {e}")
 
-        # Gemini setup (fallback)
+        # Gemini setup (fallback) — google-genai >= 0.8 new SDK
         gemini_key = os.getenv("GEMINI_API_KEY")
         if gemini_key:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=gemini_key)
-                self._gemini_model = genai.GenerativeModel(self.GEMINI_MODEL)
+                from google import genai as google_genai
+                self._gemini_client = google_genai.Client(api_key=gemini_key)
                 log.info(f"Gemini client initialized (fallback ready) | model={self.GEMINI_MODEL}")
             except Exception as e:
                 log.warning(f"Gemini init failed: {e}")
@@ -65,14 +64,13 @@ class AIAnalyst:
         signal:     dict,
         mtf_bias:   str = "NEUTRAL",
         symbol:     str = "EURUSD",
-        advanced_pat_ctx: dict = None,  # 🎯 নতুন আর্গুমেন্টটি এখানে রিসিভ করা হলো
-        **kwargs,                       # 🧠 ফিউচার-প্রুফ করার জন্য ক্যাচ-অল kwargs যোগ করা হলো
+        advanced_pat_ctx: dict = None,
+        **kwargs,
     ) -> dict:
         """
         সব technical context নিয়ে LLM analyst এর opinion নেয়।
         Returns structured dict।
         """
-        # Context builder-এ advanced_pat_ctx পাস করা হচ্ছে
         context = self._build_context(
             ind_ctx, pat_ctx, sr_ctx, regime, signal, mtf_bias, symbol, advanced_pat_ctx
         )
@@ -84,7 +82,7 @@ class AIAnalyst:
             raw = self._call_groq(prompt)
 
         # Fallback: Gemini
-        if raw is None and self._gemini_model:
+        if raw is None and self._gemini_client:
             raw = self._call_gemini(prompt)
 
         if raw is None:
@@ -92,7 +90,7 @@ class AIAnalyst:
 
         result = self._parse_response(raw)
         log.info(
-            f"LLM → Signal: {result.get('signal')} | "
+            f"LLM -> Signal: {result.get('signal')} | "
             f"Confidence: {result.get('confidence')}%"
         )
         return result
@@ -101,84 +99,87 @@ class AIAnalyst:
     def _build_context(
         self, ind, pat, sr, regime, signal, mtf_bias, symbol, advanced_pat=None
     ) -> str:
-        # অ্যাডভান্সড চার্ট প্যাটার্ন প্রসেস করার লজিক
         adv_patterns_str = "None"
         if advanced_pat and isinstance(advanced_pat, dict):
-            # আপনার লগে যেভাবে প্রিন্ট হচ্ছিল, সেভাবে ফরম্যাট করার চেষ্টা
             adv_patterns_str = str(advanced_pat.get('recent_patterns', advanced_pat))
 
         return f"""
 SYMBOL        : {symbol}
 TIMEFRAME     : 15M
 
-── PRICE & TREND ──
+-- PRICE & TREND --
 Close         : {ind.get('close', 'N/A')}
 Trend         : {ind.get('trend', 'N/A')}
 EMA9          : {ind.get('ema9', 'N/A')}
 SMA20         : {ind.get('sma20', 'N/A')}
 
-── MOMENTUM ──
+-- MOMENTUM --
 RSI (14)      : {ind.get('rsi', 'N/A')}
 MACD Signal   : {ind.get('macd_signal', 'N/A')}
 MACD Value    : {ind.get('macd', 'N/A')}
 
-── VOLATILITY ──
+-- VOLATILITY --
 ATR           : {ind.get('atr', 'N/A')}
 BB Position   : {ind.get('bb_position', 'N/A')}
 
-── PATTERNS ──
+-- PATTERNS --
 Recent        : {pat.get('recent_patterns', [])}
-Advanced Pat  : {adv_patterns_str}  # 🎯 এআই এখন এই অ্যাডভান্সড প্যাটার্নও দেখতে পাবে
+Advanced Pat  : {adv_patterns_str}
 Signal        : {pat.get('pattern_signal', 'N/A')}
 
-── SUPPORT / RESISTANCE ──
+-- SUPPORT / RESISTANCE --
 Location      : {sr.get('location', 'N/A')}
 Nearest S     : {sr.get('nearest_support', 'N/A')}
 Nearest R     : {sr.get('nearest_resistance', 'N/A')}
 Pivot PP      : {sr.get('pivot_pp', 'N/A')}
 
-── MARKET REGIME (Day 8) ──
+-- MARKET REGIME --
 Regime        : {regime.get('regime', 'N/A')}
 Direction     : {regime.get('direction', 'N/A')}
 Strength      : {regime.get('strength', 'N/A')}
 Volatility    : {regime.get('volatility', 'N/A')}
 ADX           : {regime.get('adx', 'N/A')}
 
-── RULE ENGINE SIGNAL (Day 9) ──
+-- RULE ENGINE SIGNAL --
 Signal        : {signal.get('signal', 'N/A')}
 Confidence    : {signal.get('confidence', 0)}%
 Entry         : {signal.get('entry', 'N/A')}
 Blocked by    : {signal.get('blocked_by', 'None')}
 Reasons       : {signal.get('reasons', [])}
 
-── MULTI-TIMEFRAME ──
+-- MULTI-TIMEFRAME --
 MTF Bias      : {mtf_bias}
 """.strip()
 
     # ── Prompt ────────────────────────────────────────────────
     def _build_prompt(self, context: str) -> str:
-        return f"""You are a professional forex trader and market analyst with 15 years of experience.
+        return f"""You are an elite professional forex trader and market analyst with 20 years of experience.
+You specialize in Smart Money Concepts (SMC), institutional order flow, and price action analysis.
 
-Analyze the following market data carefully.
+Analyze the following market data carefully and provide a structured trade decision.
 
 {context}
 
-Rules:
-1. Combine all signals — do not rely on one indicator alone
-2. Respect market regime — in strong trends, counter-trend trades are risky
-3. If signals conflict, recommend WAIT
-4. Be conservative — protecting capital is priority
-5. Explain your reasoning clearly
+ANALYSIS RULES:
+1. Combine ALL signals — do not rely on one indicator alone
+2. Respect market regime — in strong trends, counter-trend trades are extremely risky
+3. If signals conflict, recommend WAIT — capital preservation is paramount
+4. Consider confluence — multiple confirming factors increase conviction
+5. Always explain WHY — your reasoning must be transparent and verifiable
+6. Consider the session context — London/NY overlap has different dynamics than Asian session
+7. Evaluate risk/reward — only recommend trades with R:R >= 2:1
 
-Return ONLY valid JSON, no extra text:
+OUTPUT FORMAT — Return ONLY valid JSON, no extra text:
 
 {{
-  "analysis": "2-3 sentence market summary",
+  "analysis": "2-3 sentence market summary explaining the current state",
   "signal": "BUY or SELL or WAIT",
   "confidence": 0-100,
-  "reasoning": "Why this signal, what confirms it, what are the risks",
-  "key_risk": "The main risk in this setup",
-  "invalidation": "What would invalidate this signal"
+  "reasoning": "Detailed explanation: WHY this direction, what confirms it, what are the confluences",
+  "key_risk": "The single most important risk that could invalidate this trade",
+  "invalidation": "Specific price level or condition that would invalidate this signal",
+  "market_condition": "TRENDING_UP or TRENDING_DOWN or RANGING or VOLATILE",
+  "risk_warning": "Any additional risk warning for the trader"
 }}"""
 
     # ── LLM callers ───────────────────────────────────────────
@@ -197,7 +198,10 @@ Return ONLY valid JSON, no extra text:
 
     def _call_gemini(self, prompt: str) -> str | None:
         try:
-            resp = self._gemini_model.generate_content(prompt)
+            resp = self._gemini_client.models.generate_content(
+                model=self.GEMINI_MODEL,
+                contents=prompt,
+            )
             return resp.text
         except Exception as e:
             log.error(f"Gemini call failed: {e}")
@@ -206,38 +210,51 @@ Return ONLY valid JSON, no extra text:
     # ── Response parser ────────────────────────────────────────
     def _parse_response(self, raw: str) -> dict:
         try:
-            # JSON block বের করো (LLM কখনো markdown দেয়)
             match = re.search(r"\{.*\}", raw, re.DOTALL)
             if match:
-                return json.loads(match.group())
+                parsed = json.loads(match.group())
+                return {
+                    "analysis":         parsed.get("analysis", "No analysis provided"),
+                    "signal":           parsed.get("signal", "WAIT"),
+                    "confidence":       min(99, max(0, int(parsed.get("confidence", 0)))),
+                    "reasoning":        parsed.get("reasoning", ""),
+                    "key_risk":         parsed.get("key_risk", "Unknown"),
+                    "invalidation":     parsed.get("invalidation", "Unknown"),
+                    "market_condition": parsed.get("market_condition", "UNKNOWN"),
+                    "risk_warning":     parsed.get("risk_warning", ""),
+                }
         except (json.JSONDecodeError, AttributeError):
             pass
 
         log.warning("Could not parse LLM JSON — returning raw text")
         return {
-            "analysis":    raw[:200] if raw else "Parse error",
-            "signal":      "WAIT",
-            "confidence":  0,
-            "reasoning":   "JSON parse failed",
-            "key_risk":    "Unknown",
-            "invalidation": "Unknown",
+            "analysis":         raw[:200] if raw else "Parse error",
+            "signal":           "WAIT",
+            "confidence":       0,
+            "reasoning":        "JSON parse failed",
+            "key_risk":         "Unknown",
+            "invalidation":     "Unknown",
+            "market_condition": "UNKNOWN",
+            "risk_warning":     "LLM response could not be parsed",
         }
 
     def _fallback_result(self, reason: str) -> dict:
         return {
-            "analysis":    reason,
-            "signal":      "WAIT",
-            "confidence":  0,
-            "reasoning":   "LLM unavailable — use rule engine signal",
-            "key_risk":    "N/A",
-            "invalidation": "N/A",
+            "analysis":         reason,
+            "signal":           "WAIT",
+            "confidence":       0,
+            "reasoning":        "LLM unavailable — use rule engine signal",
+            "key_risk":         "N/A",
+            "invalidation":     "N/A",
+            "market_condition": "UNKNOWN",
+            "risk_warning":     "AI analysis unavailable",
         }
 
     # ── Print ──────────────────────────────────────────────────
     def print_summary(self, result: dict) -> None:
-        icons = {"BUY": "🟢", "SELL": "🔴", "WAIT": "🟡"}
-        icon   = icons.get(result.get("signal", "WAIT"), "🟡")
-        bar   = "═" * 44
+        icons = {"BUY": "[BUY]", "SELL": "[SELL]", "WAIT": "[WAIT]"}
+        icon  = icons.get(result.get("signal", "WAIT"), "[WAIT]")
+        bar   = "=" * 44
 
         log.info(bar)
         log.info(f"   {icon}  LLM ANALYST REPORT")
@@ -252,9 +269,11 @@ Return ONLY valid JSON, no extra text:
 
     def get_ai_context(self, result: dict) -> dict:
         return {
-            "llm_signal":      result.get("signal", "WAIT"),
-            "llm_confidence":  result.get("confidence", 0),
-            "llm_analysis":    result.get("analysis", ""),
-            "llm_reasoning":   result.get("reasoning", ""),
-            "llm_key_risk":    result.get("key_risk", ""),
+            "llm_signal":           result.get("signal", "WAIT"),
+            "llm_confidence":       result.get("confidence", 0),
+            "llm_analysis":         result.get("analysis", ""),
+            "llm_reasoning":        result.get("reasoning", ""),
+            "llm_key_risk":         result.get("key_risk", ""),
+            "llm_market_condition": result.get("market_condition", "UNKNOWN"),
+            "llm_risk_warning":     result.get("risk_warning", ""),
         }

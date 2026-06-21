@@ -1,12 +1,12 @@
 # memory/trade_memory.py  —  Day 33 | Full Memory Bridge & Self-Learning Vector Layer
 # ====================================================================================
 # এই মডিউলে Day 16-এর Database/Pattern ট্র্যাকিং এবং Day 33-এর Local Vector Memory
-# (sentence-transformers) একসাথে মিক্স করা হয়েছে যাতে কোনো ডুপ্লিকেট ক্লাস এরর না আসে।
+# (sentence-transformers) একসাথে মিক্স করা হয়েছে যাতে কোনো ডুপ্লিকেট ক্লাস এরর না আসে।
 #
 # এটি যা করে:
 #   - প্রতিটা closed trade-কে তার entry context (RSI, trend, regime, pattern) +
 #     outcome (WIN/LOSS, pnl) সহ ডেটাবেজে এবং ভেক্টর হিসেবে .npy ফাইলে স্টোর করে।
-#   - নতুন setup আসলে similar past trades রিট্রিভ করে টেক্সট আকারে AIAnalyst-এ পাঠায়।
+#   - নতুন setup আসলে similar past trades রিট্রিভ করে টেক্সট আকারে AIAnalyst-এ পাঠায়।
 # ====================================================================================
 
 import os
@@ -24,15 +24,50 @@ os.makedirs(MEMORY_DIR, exist_ok=True)
 VECTORS_PATH = os.path.join(MEMORY_DIR, "vectors.npy")
 METADATA_PATH = os.path.join(MEMORY_DIR, "metadata.json")
 
+# ── Embedding model setup (graceful fallback) ──────────────────────────────────
+EMBEDDINGS_AVAILABLE = False
+
 try:
-    from sentence_transformers import SentenceTransformer
+    from sentence_transformers import SentenceTransformer as _ST
+
+    def _load_embedding_model(model_name: str):
+        """
+        Model load করো।
+        - আগে local cache চেক করে (offline-safe)
+        - না পেলে download করার চেষ্টা করে
+        - সব fail হলে None return করে (system চলতে থাকে)
+        """
+        # Local cache path (sentence-transformers default cache)
+        cache_dir = os.path.join(
+            os.path.expanduser("~"),
+            ".cache", "torch", "sentence_transformers",
+            model_name.replace("/", "_"),
+        )
+        try:
+            if os.path.isdir(cache_dir):
+                log.info(f"[TradeMemory] Loading embedding model from cache: {cache_dir}")
+                return _ST(cache_dir)
+            else:
+                log.info(f"[TradeMemory] Downloading embedding model: {model_name} (~80MB, once only)")
+                return _ST(model_name)
+        except Exception as e:
+            log.warning(
+                f"[TradeMemory] Embedding model load failed: {e}\n"
+                f"  Vector memory disabled — trading continues normally.\n"
+                f"  To enable: pip install sentence-transformers  then re-run."
+            )
+            return None
+
     EMBEDDINGS_AVAILABLE = True
+
 except ImportError:
-    EMBEDDINGS_AVAILABLE = False
     log.warning(
-        "sentence-transformers নেই — install করো: "
-        "pip install sentence-transformers"
+        "[TradeMemory] sentence-transformers not installed — vector memory disabled.\n"
+        "  To enable: pip install sentence-transformers"
     )
+
+    def _load_embedding_model(model_name: str):
+        return None
 
 
 class TradeMemory:
@@ -40,7 +75,7 @@ class TradeMemory:
     SQL Database + Closed trade lessons-এর local vector memory (Day 16 & Day 33 Combined).
     """
 
-    MODEL_NAME = "all-MiniLM-L6-v2"   # ছোট (~80MB), দ্রুত, ভালো general-purpose embedding
+    MODEL_NAME = "all-MiniLM-L6-v2"
     TOP_K = 3
 
     def __init__(self, seed_rules: bool = False):
@@ -52,10 +87,19 @@ class TradeMemory:
         self._model = None
         self._vectors: np.ndarray | None = None
         self._metadata: list[dict] = []
-        
-        if EMBEDDINGS_AVAILABLE:
-            self._model = SentenceTransformer(self.MODEL_NAME)
+
+        # Model load — failure এ None থাকবে, system crash করবে না
+        self._model = _load_embedding_model(self.MODEL_NAME)
+        if self._model is not None:
+            log.info(f"[TradeMemory] Embedding model ready: {self.MODEL_NAME}")
+        else:
+            log.warning("[TradeMemory] Running without vector memory (embedding model unavailable)")
+
         self._load_vector_data()
+
+    def _has_model(self) -> bool:
+        """Embedding model available কিনা চেক করো।"""
+        return self._model is not None
 
     # ── Called from trader.py / signal_pipeline.py ─────────────────────────────
 
@@ -108,7 +152,7 @@ class TradeMemory:
         return None
 
     def on_trade_closed(self, trade_id: int, result: str, pnl: float, pnl_pips: float = 0.0, close_reason: str = "TP/SL"):
-        # ১. ক্লাসিক ডাটাবেজ পারফরম্যান্স আপডেট (Day 16)
+        # Day 16: Database performance update
         self.db.update_trade_result(trade_id, result, pnl)
         self.db.update_daily_performance()
 
@@ -137,8 +181,8 @@ class TradeMemory:
                 "rr":      trade.get("rr_ratio", 0) if trade else 0,
             })
 
-        # ২. ভেক্টর মেমোরি লেসন এডিশন (Day 33)
-        if EMBEDDINGS_AVAILABLE and trade:
+        # Day 33: Vector memory lesson
+        if self._has_model() and trade:
             closed_trade_payload = {
                 "pair":         trade.get("pair"),
                 "type":         trade.get("signal"),
@@ -155,7 +199,7 @@ class TradeMemory:
             }
             self.add_vector_lesson(closed_trade_payload)
 
-        print(f"📋 Trade #{trade_id} closed: {result} | PnL: ${pnl}")
+        log.info(f"Trade #{trade_id} closed: {result} | PnL: ${pnl}")
 
     def _generate_lesson(self, trade: dict) -> str:
         conf = trade.get("confidence", 0)
@@ -176,7 +220,7 @@ class TradeMemory:
 
     def add_vector_lesson(self, closed_trade: dict) -> None:
         """Closed trade-কে ভেক্টরাইজ করে local রিদমে সেভ করে।"""
-        if not EMBEDDINGS_AVAILABLE:
+        if not self._has_model():
             return
 
         description = self._describe_setup(closed_trade)
@@ -201,11 +245,11 @@ class TradeMemory:
             self._vectors = np.vstack([self._vectors, vector])
 
         self._save_vector_data()
-        log.info(f"[TradeMemory Vector] Lesson saved: {lesson['pair']} → total: {len(self._metadata)}")
+        log.info(f"[TradeMemory Vector] Lesson saved: {lesson['pair']} | total: {len(self._metadata)}")
 
     def find_similar(self, current_context: dict, top_k: int = None) -> list[dict]:
-        """করেন্ট মার্কেটের সাথে সবচেয়ে মিল থাকা অতীতের ট্রেডগুলো টপ-কে ভেক্টর ম্যাচিং করে আনে।"""
-        if not EMBEDDINGS_AVAILABLE or self._vectors is None or len(self._metadata) == 0:
+        """করেন্ট মার্কেটের সাথে সবচেয়ে মিল থাকা অতীতের ট্রেডগুলো টপ-কে ভেক্টর ম্যাচিং করে আনে।"""
+        if not self._has_model() or self._vectors is None or len(self._metadata) == 0:
             return []
 
         top_k = top_k or self.TOP_K
@@ -227,13 +271,13 @@ class TradeMemory:
         """AIAnalyst প্রম্পটে ইনজেক্ট করার জন্য একটি টেক্সট ব্লকে কনভার্ট করে।"""
         similar = self.find_similar(current_context)
         if not similar:
-            return "কোনো past lesson পাওয়া যায়নি (memory খালি বা এখনো setup নয়)।"
+            return "No past lessons found (memory empty or vector model unavailable)."
 
-        lines = ["── PAST SIMILAR TRADES (TradeMemory) ──"]
+        lines = ["-- PAST SIMILAR TRADES (TradeMemory) --"]
         for item in similar:
             lesson = item["lesson"]
             lines.append(
-                f"  • {lesson['pair']} {lesson['type']} → {lesson['result']} "
+                f"  * {lesson['pair']} {lesson['type']} -> {lesson['result']} "
                 f"(${lesson['pnl']}, {lesson.get('pnl_pips', 0)} pips) "
                 f"[similarity {item['similarity']}] — {lesson.get('close_reason', '')}"
             )
@@ -284,14 +328,16 @@ class TradeMemory:
     def print_stats(self):
         self.db.print_stats()
         self.pattern.print_stats()
-        
-        # Day 33 Vector stats
-        if EMBEDDINGS_AVAILABLE and self._metadata:
-            wins = sum(1 for m in self._metadata if m["result"] == "WIN")
+
+        if self._has_model() and self._metadata:
+            wins  = sum(1 for m in self._metadata if m["result"] == "WIN")
             total = len(self._metadata)
-            bar = "═" * 44
+            bar   = "=" * 44
             log.info(bar)
-            log.info(f" 🧠 VECTOR MEMORY COUNTS: {total} lessons | WinRate: {round(wins/total*100, 1) if total else 0}%")
+            log.info(
+                f" [MEMORY] VECTOR MEMORY: {total} lessons | "
+                f"WinRate: {round(wins/total*100, 1) if total else 0}%"
+            )
             log.info(bar)
 
     # ── Disk I/O ─────────────────────────────────────────────────────────────
@@ -304,7 +350,7 @@ class TradeMemory:
                     self._metadata = json.load(f)
                 log.info(f"[TradeMemory] Loaded {len(self._metadata)} past vector lessons")
             except Exception as e:
-                log.error(f"[TradeMemory] Vector Load failed: {e}")
+                log.error(f"[TradeMemory] Vector load failed: {e}")
 
     def _save_vector_data(self) -> None:
         if self._vectors is not None:

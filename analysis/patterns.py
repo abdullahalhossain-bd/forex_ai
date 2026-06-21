@@ -83,7 +83,7 @@ class PatternDetector:
         if body == 0:
             return 'none'
 
-        if lower_wick > body * 2 and upper_wick < body * 0.5:
+        if lower_wick > body * 2 and upper_wick <= body * 0.5:
             return 'hammer'
         return 'none'
 

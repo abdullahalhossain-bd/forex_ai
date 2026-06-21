@@ -20,7 +20,7 @@ class DataValidator:
 
     def validate(self, df: pd.DataFrame, symbol: str, timeframe: str) -> bool:
         """
-        সব checks run করো।
+        Run all data quality checks.
         Return True  → data OK, proceed
         Return False → critical issue, don't proceed
         """
@@ -28,7 +28,13 @@ class DataValidator:
         passed = True
 
         passed &= self._check_empty(df)
+        if not passed:
+            return False  # Short-circuit: no point checking columns on empty df
+
         passed &= self._check_columns(df)
+        if not passed:
+            return False  # Short-circuit: missing required columns
+
         self._check_missing_values(df)
         self._check_duplicates(df)
         self._check_price_sanity(df)
@@ -36,9 +42,9 @@ class DataValidator:
         self._check_gaps(df, timeframe)
 
         if passed:
-            log.info("✅ Data validation passed")
+            log.info("Data validation passed")
         else:
-            log.error("❌ Data validation FAILED — check warnings above")
+            log.error("Data validation FAILED — check warnings above")
 
         return passed
 
@@ -64,6 +70,8 @@ class DataValidator:
 
     def _check_missing_values(self, df):
         for col in ['open', 'high', 'low', 'close']:
+            if col not in df.columns:
+                continue
             n = df[col].isna().sum()
             if n > 0:
                 log.warning(f"Missing values in '{col}': {n} rows")

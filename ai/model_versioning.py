@@ -1,6 +1,8 @@
 """
 Model Versioning System
 Handles model versioning, storage, and deployment
+
+NOTE: TensorFlow and MLflow are OPTIONAL. The system works without them.
 """
 import os
 import json
@@ -8,10 +10,22 @@ import logging
 import pickle
 from datetime import datetime
 from typing import Dict, List, Optional, Any
-import tensorflow as tf
-from tensorflow import keras
-import mlflow
-import mlflow.tensorflow
+
+# Optional ML dependencies
+try:
+    import tensorflow as tf
+    from tensorflow import keras
+    TF_AVAILABLE = True
+except ImportError:
+    TF_AVAILABLE = False
+
+try:
+    import mlflow
+    import mlflow.tensorflow
+    MLFLOW_AVAILABLE = True
+except ImportError:
+    MLFLOW_AVAILABLE = False
+
 from config import Config
 
 class ModelVersionManager:

@@ -48,7 +48,7 @@ class DataFetcher:
 
     def __init__(self):
         self.source = self._detect_source()
-        log.info(f"✅ DataFetcher initialized | source: {self.source}")
+        log.info(f"[OK] DataFetcher initialized | source: {self.source}")
 
     def _detect_source(self):
         """Available library detect করো"""
@@ -64,12 +64,17 @@ class DataFetcher:
             pass
         return "csv"
 
-    def fetch_ohlcv(self, symbol="EUR/USDT", timeframe="15m", limit=300):
+    def fetch_ohlcv(self, symbol="EUR/USDT", timeframe="15m", limit=300, periods=None):
         """
         Data fetch করো — source অনুযায়ী method বেছে নেবে।
+        `periods` is an alias for `limit` for backward compatibility.
         """
+        # backward compat: periods → limit
+        if periods is not None:
+            limit = periods
+
         symbol = self._normalize_symbol(symbol)
-        log.info(f"📡 Fetching {symbol} | {timeframe} | {limit} candles...")
+        log.info(f"Fetching {symbol} | {timeframe} | {limit} candles...")
 
         if self.source == "yfinance":
             return self._fetch_yfinance(symbol, timeframe, limit)
@@ -117,7 +122,7 @@ class DataFetcher:
             # Limit to requested candles
             df = df.tail(limit)
 
-            log.info(f"✅ Got {len(df)} candles | Latest: {df.index[-1]}")
+            log.info(f"[OK] Got {len(df)} candles | Latest: {df.index[-1]}")
             return df
 
         except Exception as e:
@@ -172,7 +177,7 @@ class DataFetcher:
                 return None
 
             df = raw[['open', 'high', 'low', 'close', 'volume']]
-            log.info(f"✅ Got {len(df)} candles via TradingView | Latest: {df.index[-1]}")
+            log.info(f"[OK] Got {len(df)} candles via TradingView | Latest: {df.index[-1]}")
             return df
 
         except Exception as e:
@@ -186,13 +191,13 @@ class DataFetcher:
     def save_to_csv(self, df, symbol, timeframe):
         filename = f"data/{symbol.replace('/', '_')}_{timeframe}.csv"
         df.to_csv(filename)
-        log.info(f"💾 Saved to {filename}")
+        log.info(f"[OK] Saved to {filename}")
 
     def load_from_csv(self, symbol, timeframe):
         filename = f"data/{symbol.replace('/', '_')}_{timeframe}.csv"
         try:
             df = pd.read_csv(filename, index_col=0, parse_dates=True)
-            log.info(f"📂 Loaded {len(df)} rows from {filename}")
+            log.info(f"[OK] Loaded {len(df)} rows from {filename}")
             return df
         except FileNotFoundError:
             log.error(f"File not found: {filename}")

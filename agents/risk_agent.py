@@ -1,47 +1,32 @@
 # agents/risk_agent.py  —  Day 12 | Risk Management Agent
-# Production-hardened: fixed JPY pip value, ZeroDivision, _no_trade consistency
+# Production-hardened: uses core.constants, consistent key naming
+# Key naming convention matches RiskEngine: "lot" (not "lot_size"),
+# "risk_pc" (not "risk_percent"), "risk_usd" (not "risk_amount_usd")
 
 from utils.logger import get_logger
+from core.constants import get_pip_size, get_pip_value_usd, clean_symbol
 
 log = get_logger("risk_agent")
-
-PIP_VALUE = {
-    "EURUSD": 0.0001,
-    "GBPUSD": 0.0001,
-    "USDJPY": 0.01,
-    "GBPJPY": 0.01,
-    "EURJPY": 0.01,
-    "AUDJPY": 0.01,
-    "DEFAULT": 0.0001,
-}
-
-# Per-standard-lot pip value in USD (approximate)
-PIP_VALUE_USD = {
-    "EURUSD": 10.0,
-    "GBPUSD": 10.0,
-    "USDJPY": 6.50,   # varies with rate; approximate
-    "GBPJPY": 6.50,
-    "EURJPY": 6.50,
-    "AUDJPY": 6.50,
-    "DEFAULT": 10.0,
-}
 
 
 class RiskAgent:
     """
-    Signal + market data থেকে lot size, SL, TP calculate করে।
-    1% risk rule enforce করে।
-    Daily loss limit track করে।
+    Risk Management Agent — calculates lot size, SL, TP from signal + ATR.
+    Enforces 1% risk rule. Tracks daily loss limit.
+
+    This is a simpler alternative to RiskEngine. The main pipeline
+    uses RiskEngine by default; this agent is available for
+    lightweight or per-pair risk calculations.
     """
 
-    MAX_RISK_PERCENT    = 1.0    # account এর সর্বোচ্চ 1% risk
-    DAILY_LOSS_LIMIT    = 3.0    # দিনে সর্বোচ্চ 3% loss হলে trading বন্ধ
+    MAX_RISK_PERCENT    = 1.0    # max 1% account risk per trade
+    DAILY_LOSS_LIMIT    = 3.0    # max 3% daily loss before stopping
     MIN_RR              = 1.5    # minimum risk:reward ratio
-    ATR_SL_MULTIPLIER   = 1.5   # SL = ATR × 1.5
+    ATR_SL_MULTIPLIER   = 1.5   # SL = ATR * 1.5
 
     def __init__(self, account_balance: float = 1000.0):
         self.balance       = account_balance
-        self.daily_loss_pc = 0.0   # Day 13 backtester এ track হবে
+        self.daily_loss_pc = 0.0
 
     def calculate(
         self,
@@ -51,9 +36,7 @@ class RiskAgent:
         regime:   dict,
         symbol:   str = "EURUSD",
     ) -> dict:
-        """
-        Signal + entry + ATR থেকে full risk parameters বের করে।
-        """
+        """Calculate full risk parameters from signal + entry + ATR."""
 
         if signal == "NO TRADE":
             return self._no_trade("Signal is NO TRADE")
@@ -63,16 +46,10 @@ class RiskAgent:
                 f"Daily loss limit hit ({self.daily_loss_pc:.1f}%)"
             )
 
-        atr     = ind_ctx.get("atr", 0.0005)
-        clean_symbol = symbol.replace("/", "").replace("=X", "").upper()[:6]
-        pip = PIP_VALUE.get(
-            clean_symbol,
-            PIP_VALUE["DEFAULT"]
-        )
-        pip_val_std = PIP_VALUE_USD.get(
-            clean_symbol,
-            PIP_VALUE_USD["DEFAULT"]
-        )
+        atr = ind_ctx.get("atr", 0.0005)
+        csym = clean_symbol(symbol)
+        pip = get_pip_size(csym)
+        pip_val_std = get_pip_value_usd(csym)
 
         # Regime-based SL multiplier
         volatility = regime.get("volatility", "NORMAL")
@@ -90,7 +67,7 @@ class RiskAgent:
             sl_pips = 10
             sl_distance = sl_pips * pip
 
-        # TP = SL × min RR
+        # TP = SL * min RR
         tp_distance = round(sl_distance * self.MIN_RR, 5)
         tp_pips     = round(tp_distance / pip)
 
@@ -103,14 +80,11 @@ class RiskAgent:
             tp_price = round(entry - tp_distance, 5)
 
         # Lot size — 1% risk rule
-        # risk_amount = balance × 1%
-        # lot = risk_amount / (sl_pips × pip_value_per_lot)
-        # Standard lot pip value ≈ $10 (EURUSD), micro = $0.10
-        risk_amount      = self.balance * (self.MAX_RISK_PERCENT / 100)
-        lot_raw          = risk_amount / (sl_pips * pip_val_std) if sl_pips > 0 else 0
-        lot_size         = round(max(0.01, min(lot_raw, 10.0)), 2)
+        risk_amount = self.balance * (self.MAX_RISK_PERCENT / 100)
+        lot_raw     = risk_amount / (sl_pips * pip_val_std) if sl_pips > 0 else 0
+        lot         = round(max(0.01, min(lot_raw, 10.0)), 2)
 
-        rr_ratio         = round(tp_pips / sl_pips, 2) if sl_pips > 0 else 0
+        rr_ratio    = round(tp_pips / sl_pips, 2) if sl_pips > 0 else 0
 
         result = {
             "approved":       True,
@@ -120,9 +94,12 @@ class RiskAgent:
             "tp_price":       tp_price,
             "sl_pips":        sl_pips,
             "tp_pips":        tp_pips,
-            "lot_size":       lot_size,
-            "risk_percent":   self.MAX_RISK_PERCENT,
-            "risk_amount_usd": round(risk_amount, 2),
+            "lot":            lot,         # Consistent key name with RiskEngine
+            "lot_size":       lot,         # Backward compat alias
+            "risk_pc":        self.MAX_RISK_PERCENT,  # Consistent key name
+            "risk_percent":   self.MAX_RISK_PERCENT,  # Backward compat alias
+            "risk_usd":       round(risk_amount, 2),   # Consistent key name
+            "risk_amount_usd": round(risk_amount, 2),  # Backward compat alias
             "rr_ratio":       rr_ratio,
             "balance":        self.balance,
             "reject_reason":  None,
@@ -137,7 +114,7 @@ class RiskAgent:
             f"[RiskAgent] {signal} | Entry: {entry} | "
             f"SL: {sl_price} ({sl_pips}p) | "
             f"TP: {tp_price} ({tp_pips}p) | "
-            f"Lot: {lot_size} | RR: {rr_ratio} | "
+            f"Lot: {lot} | RR: {rr_ratio} | "
             f"Approved: {result['approved']}"
         )
         return result
@@ -151,16 +128,18 @@ class RiskAgent:
             "entry":           None,
             "sl_price":        None,
             "tp_price":        None,
+            "lot":             0,
             "lot_size":        0,
             "sl_pips":         0,
             "tp_pips":         0,
             "rr_ratio":        0,
+            "risk_usd":        0,
             "risk_amount_usd": 0,
         }
 
     def print_summary(self, result: dict) -> None:
-        bar  = "═" * 44
-        icon = "✅" if result["approved"] else "⛔"
+        bar  = "=" * 44
+        icon = "[OK]" if result["approved"] else "[REJECT]"
         log.info(bar)
         log.info(f"  {icon}  RISK AGENT")
         log.info(bar)
@@ -172,15 +151,15 @@ class RiskAgent:
             log.info(f"  Entry       : {result['entry']}")
             log.info(f"  SL          : {result['sl_price']}  ({result['sl_pips']} pips)")
             log.info(f"  TP          : {result['tp_price']}  ({result['tp_pips']} pips)")
-            log.info(f"  Lot size    : {result['lot_size']}")
-            log.info(f"  Risk        : {result['risk_percent']}%  (${result.get('risk_amount_usd')})")
+            log.info(f"  Lot         : {result.get('lot', result.get('lot_size', 0))}")
+            log.info(f"  Risk        : {result.get('risk_pc', result.get('risk_percent', 0))}%  (${result.get('risk_usd', result.get('risk_amount_usd', 0))})")
             log.info(f"  R:R         : 1:{result['rr_ratio']}")
         log.info(bar)
 
     def get_ai_context(self, result: dict) -> dict:
         return {
             "risk_approved":  result["approved"],
-            "risk_lot":       result.get("lot_size", 0),
+            "risk_lot":       result.get("lot", result.get("lot_size", 0)),
             "risk_sl_pips":   result.get("sl_pips", 0),
             "risk_tp_pips":   result.get("tp_pips", 0),
             "risk_rr":        result.get("rr_ratio", 0),

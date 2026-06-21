@@ -17,6 +17,13 @@
 #     memory/pending_approvals.json), so per-symbol instances would silently
 #     stomp on each other's state. Standalone AITrader usage still works:
 #     if you don't pass one in, it creates its own.
+#
+#   - Day 37 hotfix: `vec_ctx` is now initialized to `{}` BEFORE the
+#     `if memory_ctx["total_trades"] > 0:` block in run_cycle(). Previously
+#     it was only assigned inside that block, so on a fresh symbol with no
+#     trade history yet (total_trades == 0), `result["memory_context"] =
+#     vec_ctx` further down raised UnboundLocalError and killed the whole
+#     cycle for every symbol in the same run.
 
 import asyncio
 import json
@@ -188,6 +195,11 @@ class AITrader:
         regime_str = market_out.get("regime", {}).get("regime", "")
         pat_ctx = self._memory.get_pattern_context(self.symbol, regime_str, pattern)
 
+        # Day 37 hotfix: initialize BEFORE the conditional so that a fresh
+        # symbol with no trade history yet (total_trades == 0) never hits
+        # the UnboundLocalError that used to crash every symbol's cycle.
+        vec_ctx = {}
+
         if memory_ctx["total_trades"] > 0:
             log.info(
                 f"[Memory] Trades: {memory_ctx['total_trades']} | "
@@ -202,8 +214,8 @@ class AITrader:
                 pair=self.symbol,
                 trend=ind.get("trend"),
                 rsi=ind.get("rsi"),
-                pattern=pattern,        # এটি সরাসরি পজিশনাল আর্গুমেন্টে চলে যাবে
-                regime=regime_str,      # এটিও সরাসরি পজিশনাল আর্গুমেন্টে চলে যাবে
+                pattern=pattern,
+                regime=regime_str,
             )
 
         log.info("[4/9] Decision Agent...")

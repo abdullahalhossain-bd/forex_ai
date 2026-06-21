@@ -1,6 +1,8 @@
 # core/exceptions.py — Centralized Exception Classes
 # ============================================================
 # Every module should fail safely using these exception types.
+# IMPORTANT: Do NOT alias TraderMemoryError to MemoryError —
+# that shadows Python's built-in and breaks OOM catching.
 # ============================================================
 
 
@@ -57,9 +59,6 @@ class ConfigurationError(TraderError):
 class TraderMemoryError(TraderError):
     """Memory/database operation failed."""
     pass
-
-# Backward alias — avoid shadowing Python's built-in MemoryError
-MemoryError = TraderMemoryError
 
 
 def safe_execute(func, error_type=TraderError, fallback=None, module_name="unknown"):

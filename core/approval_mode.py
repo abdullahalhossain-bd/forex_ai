@@ -117,10 +117,24 @@ class ApprovalMode:
             log.info(f"[Mode 2 — Supervised] Waiting for approval #{pending_id}")
             log.info(summary)
 
-            # Telegram-এ পাঠাও যদি bot থাকে
+            # Send to Telegram if bot is available (handle async safely)
             if telegram_bot:
                 try:
-                    telegram_bot.send_message(summary)
+                    import asyncio
+                    if asyncio.iscoroutinefunction(telegram_bot.send_message):
+                        try:
+                            loop = asyncio.get_event_loop()
+                            if loop.is_running():
+                                # Can't await in sync context — schedule it
+                                asyncio.ensure_future(telegram_bot.send_message(summary))
+                            else:
+                                loop.run_until_complete(telegram_bot.send_message(summary))
+                        except RuntimeError:
+                            loop = asyncio.new_event_loop()
+                            loop.run_until_complete(telegram_bot.send_message(summary))
+                            loop.close()
+                    else:
+                        telegram_bot.send_message(summary)
                 except Exception as e:
                     log.warning(f"Telegram send failed: {e}")
 

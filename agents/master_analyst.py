@@ -28,9 +28,11 @@ try:
     LLM_AVAILABLE = True
 except Exception:
     LLM_AVAILABLE = False
-    log.warning("[MasterAnalyst] anthropic package not found — LLM disabled")
+    _client = None
+    log.warning("[MasterAnalyst] anthropic package not found or API key missing — LLM disabled")
 
-MODEL   = "claude-sonnet-4-6"
+# Valid Anthropic model names — use claude-3-5-sonnet as the default
+MODEL   = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
 MAX_TOK = 1500
 
 

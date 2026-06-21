@@ -410,14 +410,19 @@ class ExecutionRouter:
     def _execute_paper(self, decision: dict, symbol: str) -> dict:
         if self.paper_trader:
             try:
-                paper_result = self.paper_trader.open_trade(
-                    symbol=symbol,
-                    direction=decision["decision"],
-                    entry=decision.get("entry"),
-                    sl=decision.get("sl"),
-                    tp=decision.get("tp"),
-                    lot=decision.get("lot", 0.01),
-                )
+                # PaperTrader uses open_trade_from_signal(), not open_trade()
+                adapted = {
+                    "final_action": decision.get("decision"),
+                    "symbol": symbol,
+                    "entry": decision.get("entry"),
+                    "sl": decision.get("sl"),
+                    "tp": decision.get("tp"),
+                    "lot": decision.get("lot", 0.01),
+                    "confidence": decision.get("confidence", 0),
+                    "rr": decision.get("rr", 0),
+                    "timeframe": decision.get("timeframe", "15m"),
+                }
+                paper_result = self.paper_trader.open_trade_from_signal(adapted)
                 return {
                     "executed": True, "action": "PAPER_ORDER",
                     "paper_result": paper_result,
