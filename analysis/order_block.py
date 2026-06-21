@@ -1,10 +1,4 @@
 # analysis/order_block.py  —  Day 44 | Order Block Detection
-# ============================================================
-# Order Block = বড় impulsive move শুরু হওয়ার আগে শেষ opposite-color
-# candle zone। Institutional players এই zone-এ entry নেয় বলে ধরা হয়,
-# তাই price আবার এই zone-এ ফিরে আসলে সেটা সম্ভাব্য entry এলাকা।
-# ============================================================
-
 import numpy as np
 import pandas as pd
 from utils.logger import get_logger
@@ -13,23 +7,12 @@ log = get_logger("order_block")
 
 
 class OrderBlockDetector:
-    """
-    Usage:
-        detector = OrderBlockDetector()
-        obs = detector.detect(df)   # df-এ আগে থেকে 'atr' column থাকতে হবে
-        nearest = detector.nearest_active(obs, current_price)
-    """
-
-    IMPULSE_ATR_MULT = 1.8     # candle body এই ATR multiple-এর বেশি হলে "strong move" ধরা হবে
-    LOOKBACK_FOR_OB  = 3       # impulse candle-এর কত candle আগে পর্যন্ত opposite candle খুঁজবে
+    IMPULSE_ATR_MULT = 1.8
+    LOOKBACK_FOR_OB  = 3
     MAX_RESULTS      = 10
-    PROXIMITY_ATR    = 0.3     # current price zone-এর কত ATR কাছে থাকলে "active/near" ধরা হবে
+    PROXIMITY_ATR    = 0.3
 
     def detect(self, df: pd.DataFrame) -> list[dict]:
-        """
-        df: OHLC + 'atr' column থাকা DataFrame।
-        Returns: most-recent-first list of order block dicts.
-        """
         if len(df) < 20 or 'atr' not in df.columns:
             log.warning("[OrderBlock] Insufficient data or missing ATR column")
             return []
@@ -50,11 +33,10 @@ class OrderBlockDetector:
 
             body = closes[i] - opens[i]
             if abs(body) < atr * self.IMPULSE_ATR_MULT:
-                continue   # strong impulse না
+                continue
 
             is_bullish_impulse = body > 0
 
-            # impulse candle-এর ঠিক আগের opposite-color candle খুঁজো (Order Block)
             ob_idx = None
             for j in range(i - 1, max(i - 1 - self.LOOKBACK_FOR_OB, -1), -1):
                 c_body = closes[j] - opens[j]
@@ -72,7 +54,6 @@ class OrderBlockDetector:
             zone_bottom = float(lows[ob_idx])
             ob_type     = 'BULLISH_ORDER_BLOCK' if is_bullish_impulse else 'BEARISH_ORDER_BLOCK'
 
-            # Mitigation check — impulse-এর পরে কোনো candle এই zone-এ ফিরে এসেছে কিনা
             mitigated = False
             for k in range(i + 1, n):
                 if lows[k] <= zone_top and highs[k] >= zone_bottom:
@@ -91,7 +72,6 @@ class OrderBlockDetector:
                 'candles_ago':   n - 1 - ob_idx,
             })
 
-        # সবচেয়ে recent OB আগে — ও duplicate index বাদ
         seen_idx = set()
         deduped  = []
         for r in sorted(results, key=lambda r: r['index'], reverse=True):
@@ -103,15 +83,7 @@ class OrderBlockDetector:
         log.info(f"[OrderBlock] Detected {len(deduped)} order blocks")
         return deduped[: self.MAX_RESULTS]
 
-    # ─────────────────────────────────────────────
-    # NEAREST ACTIVE ZONE
-    # ─────────────────────────────────────────────
-
-    def nearest_active(self, order_blocks: list[dict], current_price: float, atr: float = None) -> dict | None:
-        """
-        Fresh (unmitigated) order block গুলোর মধ্যে current price-এর সবচেয়ে
-        কাছের zone খুঁজে দেয়। `in_zone=True` হলে price এখনই zone-এর ভেতরে আছে।
-        """
+    def nearest_active(self, order_blocks, current_price, atr=None):
         fresh = [ob for ob in order_blocks if ob['fresh']]
         if not fresh:
             return None
@@ -137,11 +109,7 @@ class OrderBlockDetector:
 
         return best
 
-    # ─────────────────────────────────────────────
-    # PRINT SUMMARY
-    # ─────────────────────────────────────────────
-
-    def print_summary(self, order_blocks: list[dict]) -> None:
+    def print_summary(self, order_blocks):
         bar = "═" * 48
         log.info(bar)
         log.info("  🧱  ORDER BLOCK DETECTION  (Day 44)")
