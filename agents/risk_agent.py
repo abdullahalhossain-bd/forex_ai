@@ -1,4 +1,5 @@
 # agents/risk_agent.py  —  Day 12 | Risk Management Agent
+# Production-hardened: fixed JPY pip value, ZeroDivision, _no_trade consistency
 
 from utils.logger import get_logger
 
@@ -8,7 +9,21 @@ PIP_VALUE = {
     "EURUSD": 0.0001,
     "GBPUSD": 0.0001,
     "USDJPY": 0.01,
+    "GBPJPY": 0.01,
+    "EURJPY": 0.01,
+    "AUDJPY": 0.01,
     "DEFAULT": 0.0001,
+}
+
+# Per-standard-lot pip value in USD (approximate)
+PIP_VALUE_USD = {
+    "EURUSD": 10.0,
+    "GBPUSD": 10.0,
+    "USDJPY": 6.50,   # varies with rate; approximate
+    "GBPJPY": 6.50,
+    "EURJPY": 6.50,
+    "AUDJPY": 6.50,
+    "DEFAULT": 10.0,
 }
 
 
@@ -49,9 +64,14 @@ class RiskAgent:
             )
 
         atr     = ind_ctx.get("atr", 0.0005)
-        pip     = PIP_VALUE.get(
-            symbol.replace("/", "").replace("=X", "").upper()[:6],
+        clean_symbol = symbol.replace("/", "").replace("=X", "").upper()[:6]
+        pip = PIP_VALUE.get(
+            clean_symbol,
             PIP_VALUE["DEFAULT"]
+        )
+        pip_val_std = PIP_VALUE_USD.get(
+            clean_symbol,
+            PIP_VALUE_USD["DEFAULT"]
         )
 
         # Regime-based SL multiplier
@@ -63,7 +83,12 @@ class RiskAgent:
         }.get(volatility, self.ATR_SL_MULTIPLIER)
 
         sl_distance = round(atr * sl_mult, 5)
-        sl_pips     = round(sl_distance / pip)
+        sl_pips     = round(sl_distance / pip) if pip > 0 else 10
+
+        # Guard: if sl_pips is 0 or sl_distance is too small, use defaults
+        if sl_pips < 1:
+            sl_pips = 10
+            sl_distance = sl_pips * pip
 
         # TP = SL × min RR
         tp_distance = round(sl_distance * self.MIN_RR, 5)
@@ -82,8 +107,7 @@ class RiskAgent:
         # lot = risk_amount / (sl_pips × pip_value_per_lot)
         # Standard lot pip value ≈ $10 (EURUSD), micro = $0.10
         risk_amount      = self.balance * (self.MAX_RISK_PERCENT / 100)
-        pip_val_std      = 10.0   # per standard lot per pip (EURUSD approx)
-        lot_raw          = risk_amount / (sl_pips * pip_val_std)
+        lot_raw          = risk_amount / (sl_pips * pip_val_std) if sl_pips > 0 else 0
         lot_size         = round(max(0.01, min(lot_raw, 10.0)), 2)
 
         rr_ratio         = round(tp_pips / sl_pips, 2) if sl_pips > 0 else 0
@@ -124,10 +148,14 @@ class RiskAgent:
             "approved":        False,
             "signal":          "NO TRADE",
             "reject_reason":   reason,
+            "entry":           None,
+            "sl_price":        None,
+            "tp_price":        None,
             "lot_size":        0,
             "sl_pips":         0,
             "tp_pips":         0,
             "rr_ratio":        0,
+            "risk_amount_usd": 0,
         }
 
     def print_summary(self, result: dict) -> None:

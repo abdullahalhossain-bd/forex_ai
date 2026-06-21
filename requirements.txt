@@ -1,30 +1,59 @@
-# ── Core (main app runtime) ─────────────────────────────
-python-dotenv>=1.0.0
-pandas>=2.0.0
-numpy>=1.24.0
+# requirements.txt — Autonomous AI Forex Trading System
+# ============================================================
+# Core dependencies
+# ============================================================
+pandas>=1.5.0
+numpy>=1.23.0
 ta>=0.11.0
-yfinance>=0.2.40
+yfinance>=0.2.31
+python-dotenv>=1.0.0
 requests>=2.31.0
-pytz>=2024.1
 beautifulsoup4>=4.12.0
 
-# ── AI / LLM layer ──────────────────────────────────────
+# ============================================================
+# LLM Providers (optional — system works without them)
+# ============================================================
+# Groq — fast LLM for analysis
 groq>=0.9.0
-google-generativeai>=0.7.0
+# Google Gemini (fallback)
+google-generativeai>=0.5.0
+# Anthropic Claude — Master Analyst
+anthropic>=0.34.0
 
-# ── Telegram bot ────────────────────────────────────────
-python-telegram-bot>=21.0
+# ============================================================
+# Database & Memory
+# ============================================================
+chromadb>=0.4.22
+sentence-transformers>=2.2.0
 
-# ── Local ML (lightweight fallback) ─────────────────────
-scikit-learn>=1.5.0
-scipy>=1.10.0
+# ============================================================
+# Visualization
+# ============================================================
+plotly>=5.18.0
 
-# ── Optional embeddings (KEEP ONLY IF YOU REALLY USE IT) ─
-sentence-transformers>=2.7.0
+# ============================================================
+# Telegram Notifications (optional)
+# ============================================================
+python-telegram-bot>=20.7
 
-# ── Optional (uncomment if needed) ──────────────────────
-# plotly>=5.22.0
-# flask>=3.0.0
-# playwright>=1.45.0
-# chromadb>=0.5.0
-# MetaTrader5>=5.0.45
+# ============================================================
+# MT5 Broker (optional — only for mt5_demo mode)
+# ============================================================
+# MetaTrader5>=5.0.4500
+
+# ============================================================
+# Web Dashboard (optional — only for dashboard mode)
+# ============================================================
+# streamlit>=1.30.0
+# playwright>=1.40.0
+
+# ============================================================
+# System Monitoring
+# ============================================================
+psutil>=5.9.0
+
+# ============================================================
+# Testing
+# ============================================================
+pytest>=7.4.0
+pytest-cov>=4.1.0

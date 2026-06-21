@@ -175,7 +175,8 @@ class AnalysisAgent:
         news_ctx    = news_filter.get_ai_context(news_result)
 
         # ── 10. Classic LLM Analyst ──────────────────────────
-        llm_result = AIAnalyst().analyze(
+        _llm = AIAnalyst()
+        llm_result = _llm.analyze(
             ind_ctx          = ind_ctx,
             pat_ctx          = pat_ctx,
             sr_ctx           = sr_ctx,
@@ -186,8 +187,8 @@ class AnalysisAgent:
             fib_ctx          = fib_ctx,
             symbol           = symbol,
         )
-        AIAnalyst().print_summary(llm_result)
-        llm_ctx = AIAnalyst().get_ai_context(llm_result)
+        _llm.print_summary(llm_result)
+        llm_ctx = _llm.get_ai_context(llm_result)
 
         # ── 11. VISION AI (Day 47) ────────────────────────────
         vision_result = {}
@@ -255,7 +256,7 @@ class AnalysisAgent:
         # Priority: News block > Sentiment conflict > Vision conflict > MasterAnalyst > Rule
         final_signal = signal_result["signal"]
 
-        if not news_result["trade_allowed"]:
+        if not news_result.get("trade_allowed", True):
             final_signal = "NO TRADE"
             log.info("[AnalysisAgent] -> NO TRADE (news block override)")
 
