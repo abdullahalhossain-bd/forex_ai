@@ -1,13 +1,22 @@
-# agents/analysis_agent.py  (Day 63 Session Intelligence Update)
+# agents/analysis_agent.py  (Day 63 Session Intelligence + Day 65 Intermarket Update)
 # ============================================================
-# Day 47 pipeline-এর সাথে Day 63 Session Intelligence যোগ হয়েছে।
+# Day 47 pipeline-এর সাথে Day 63 Session Intelligence এবং Day 65
+# Intermarket Analysis Engine যোগ হয়েছে।
 #
 # নতুন Step (Day 63):
 #   Step 0: SessionAnalyzer — time-aware strategy selection
 #
-# Session Intelligence inject হয় সব module-এর আগে,
-# তাই সব context session-aware হয়ে যায়।
-# Dead zone-এ trade block হয়। Session-specific pair priority দেওয়া হয়।
+# নতুন Step (Day 65):
+#   Step 8.5: IntermarketEngine — global macro context (DXY, Gold,
+#             Oil, US10Y, S&P500, VIX) + Risk-On/Off regime + Macro+SMC
+#             fusion। SMC engine (step 8) আর Session re-run-এর পরে
+#             বসানো হয়েছে, কারণ fusion-এর জন্য smc_ctx ও session_ctx
+#             দুটোই দরকার।
+#
+# Session Intelligence inject হয় সব module-এর আগে, তাই সব context
+# session-aware হয়ে যায়। Dead zone-এ trade block হয়। Session-specific
+# pair priority দেওয়া হয়। Intermarket context MasterAnalyst-কে global
+# macro picture দেয়, যাতে AI শুধু chart না দেখে গোটা market দেখে।
 # ============================================================
 
 from analysis.patterns import PatternDetector
@@ -19,6 +28,7 @@ from analysis.sentiment import SentimentEngine
 from analysis.smc_engine import SMCEngine
 from analysis.sentiment_data import SentimentDataProvider
 from analysis.session_analyzer import SessionAnalyzer   # ← Day 63
+from analysis.intermarket import IntermarketEngine       # ← Day 65
 from fundamental.news_filter import NewsFilter
 from ai.ai_analyst import AIAnalyst
 from agents.master_analyst import MasterAnalyst
@@ -30,15 +40,17 @@ log = get_logger("analysis_agent")
 
 class AnalysisAgent:
     """
-    Day 63 Unified Pipeline:
-      Session Intelligence (NEW)
+    Day 65 Unified Pipeline:
+      Session Intelligence (Day 63)
       -> Patterns -> S/R -> Advanced Patterns -> Fibonacci -> Bias -> Signal
-      -> Sentiment -> SMC -> News -> Classic LLM -> Vision AI -> MasterAnalyst
+      -> Sentiment -> SMC -> Session re-run -> Intermarket (Day 65)
+      -> News -> Classic LLM -> Vision AI -> MasterAnalyst
     """
 
     def __init__(self, chart_reader=None):
-        self.chart_reader     = chart_reader
-        self.session_analyzer = SessionAnalyzer()   # Day 63
+        self.chart_reader       = chart_reader
+        self.session_analyzer   = SessionAnalyzer()      # Day 63
+        self.intermarket_engine = IntermarketEngine()     # Day 65
 
     def run(self, market_output: dict, memory_ctx: dict = None) -> dict:
         if "error" in market_output:
@@ -52,11 +64,11 @@ class AnalysisAgent:
         timeframe = market_output.get("timeframe", "15m")
 
         log.info(
-            f"[AnalysisAgent] Running Day 63 pipeline for {symbol} ({timeframe})"
+            f"[AnalysisAgent] Running Day 65 pipeline for {symbol} ({timeframe})"
         )
 
         # ── 0. SESSION INTELLIGENCE (Day 63) ─────────────────
-        # SMC context는 아직 없으므로 빈 dict로 시작, 나중에 update
+        # SMC context এখনো নেই, তাই খালি dict দিয়ে শুরু, পরে update
         session_result = self.session_analyzer.analyze(
             pair        = symbol,
             smc_ctx     = {},
@@ -198,6 +210,21 @@ class AnalysisAgent:
         session_ctx = self.session_analyzer.get_ai_context(session_result)
         self.session_analyzer.print_summary(session_result)
 
+        # ── 8.5 Intermarket / Global Macro Analysis (Day 65) ─
+        intermarket_result = {}
+        intermarket_ctx    = {}
+        macro_fusion        = {}
+        try:
+            intermarket_result = self.intermarket_engine.analyze(symbol)
+            self.intermarket_engine.print_summary(intermarket_result)
+            intermarket_ctx = self.intermarket_engine.get_ai_context(intermarket_result)
+
+            macro_fusion = self.intermarket_engine.fuse_with_smc(
+                intermarket_result, smc_ctx=smc_ctx, session_ctx=session_ctx
+            )
+        except Exception as e:
+            log.warning(f"[AnalysisAgent] Intermarket Engine error: {e}")
+
         # ── 9. News Filter ───────────────────────────────────
         news_filter = NewsFilter()
         news_result = news_filter.check(symbol)
@@ -266,7 +293,8 @@ class AnalysisAgent:
                 fib_ctx          = fib_ctx,
                 advanced_pat_ctx = advanced_pat_ctx,
                 vision_ctx       = vision_ctx,
-                session_ctx      = session_ctx,   # ← Day 63
+                session_ctx      = session_ctx,        # ← Day 63
+                intermarket_ctx  = intermarket_ctx,    # ← Day 65
             )
             master.print_summary(master_result)
             master_ctx = master.get_ai_context(master_result)
@@ -306,6 +334,8 @@ class AnalysisAgent:
             f"[AnalysisAgent] Complete — "
             f"Session: {session_ctx['current_session']} ({session_ctx['gmt_time']}) | "
             f"Strategy: {session_ctx['session_strategy']} | "
+            f"Macro Regime: {intermarket_ctx.get('macro_regime', 'N/A')} | "
+            f"Macro Score: {intermarket_ctx.get('macro_score', 'N/A')} | "
             f"Rule: {signal_result['signal']} | "
             f"Master: {master_ctx.get('master_signal', 'N/A')} | "
             f"Final: {final_signal}"
@@ -340,6 +370,10 @@ class AnalysisAgent:
             # Day 63
             "session":           session_result,
             "session_ctx":       session_ctx,
+            # Day 65
+            "intermarket":       intermarket_result,
+            "intermarket_ctx":   intermarket_ctx,
+            "macro_fusion":      macro_fusion,
             # Master
             "master":            master_result,
             "master_ctx":        master_ctx,

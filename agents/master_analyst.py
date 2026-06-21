@@ -1,14 +1,16 @@
-# agents/master_analyst.py  —  Day 42 + Day 44 + Day 47 + Day 63
+# agents/master_analyst.py  —  Day 42 + Day 44 + Day 47 + Day 63 + Day 65
 # ============================================================
 # Day 63: Session Intelligence context যোগ হয়েছে।
+# Day 65: Intermarket / Global Macro Intelligence context যোগ হয়েছে।
 #
-# নতুন context block: "session_intelligence"
-#   - current_session, volatility, strategy, pair priority
-#   - London manipulation window alert
-#   - Fusion score, dead zone status
+# নতুন context block (Day 65): "global_market_intelligence"
+#   - DXY/Gold/Oil/US10Y/SP500/VIX trends
+#   - Risk-On / Risk-Off regime + trading mode
+#   - USD bias + per-currency macro bias + pair bias
+#   - Macro Score (0-100), cross-asset confirmation, event risk penalty
 #
-# LLM system prompt-এ session awareness rules যোগ হয়েছে।
-# Final confidence-এ session score যোগ হয়েছে।
+# LLM system prompt-এ macro awareness rules যোগ হয়েছে।
+# Final confidence-এ macro score weight + event-risk penalty যোগ হয়েছে।
 # ============================================================
 
 import json
@@ -34,15 +36,18 @@ MAX_TOK = 1500
 
 class MasterAnalyst:
     """
-    Day 42 + Day 44 + Day 47 + Day 63 — Professional Forex Trader Brain।
+    Day 42 + Day 44 + Day 47 + Day 63 + Day 65 — Professional Forex Trader Brain।
 
-    Now session-aware: different strategy suggestions based on
-    current market session (London / NY / Tokyo / Overlap).
+    Now session-aware AND macro-aware: different strategy suggestions
+    based on current market session, AND global intermarket context
+    (DXY/Gold/Oil/Yields/SP500/VIX) instead of treating forex as an
+    isolated market.
     """
 
     _SYSTEM = """You are an elite professional forex trader with 20 years of experience,
 fluent in Smart Money Concepts (SMC) — order blocks, FVGs, liquidity sweeps, BOS/CHoCH —
-and deeply aware of how forex market sessions behave differently.
+deeply aware of how forex market sessions behave differently, AND a macro/intermarket
+analyst who understands how DXY, Gold, Oil, Bond Yields, S&P500, and VIX drive currency moves.
 
 Your job: synthesize ALL market intelligence into ONE coherent trade decision.
 
@@ -56,16 +61,30 @@ SESSION RULES (critical — follow these):
 7. If pair_session_label is POOR or AVOID for this session → lower confidence by 15%.
 8. in_session_transition=true → extra caution. Note the transition_alert in reasoning.
 
+GLOBAL MACRO RULES (Day 65 — critical, check global_market_intelligence block):
+9. Forex is NOT an isolated market. Check macro_pair_bias and macro_regime before confirming
+   any technical signal. If macro_pair_bias directly OPPOSES the technical/SMC signal AND
+   cross_asset_confirmed=true, lower confidence significantly or prefer WAIT.
+10. If macro_pair_bias AGREES with the technical/SMC signal, treat this as strong confluence
+    (mention it explicitly in market_story and reasoning) — this is the highest-quality setup
+    described as "Macro + SMC Fusion" in your playbook.
+11. If event_risk_elevated=true (FOMC/NFP/CPI nearby), reduce confidence by roughly
+    event_risk_penalty points and mention the event risk in self_critique.
+12. If trading_mode is "DEFENSIVE" (VIX fear elevated/extreme), only take high-conviction
+    setups and say so in reasoning; if "CAUTIOUS", reduce confidence modestly.
+13. If cross_asset_confirmed=false, treat the macro signal as weak — do not let it dominate
+    over strong technical/SMC evidence either direction.
+
 GENERAL RULES:
-9. Do NOT force a trade. If conditions are unclear → WAIT.
-10. Consider ALL inputs: technical, SMC, sentiment, news, session, history.
-11. Self-critique: what could go wrong?
+14. Do NOT force a trade. If conditions are unclear → WAIT.
+15. Consider ALL inputs: technical, SMC, sentiment, news, session, macro/intermarket, history.
+16. Self-critique: what could go wrong?
 
 Output ONLY valid JSON, no markdown, no extra text.
 
 JSON schema:
 {
-  "market_story": "2-4 sentence narrative including session context",
+  "market_story": "2-4 sentence narrative including session AND macro context",
   "key_levels": [float, float, float],
   "trade_plan": {
     "signal": "BUY" | "SELL" | "WAIT",
@@ -74,7 +93,7 @@ JSON schema:
     "tp1": float | null,
     "tp2": float | null,
     "confidence": integer (0-100),
-    "reasoning": "1-2 sentence rationale mentioning session"
+    "reasoning": "1-2 sentence rationale mentioning session and macro alignment"
   },
   "risks": ["risk 1", "risk 2"],
   "self_critique": "What could go wrong or what am I missing?",
@@ -100,6 +119,7 @@ JSON schema:
         advanced_pat_ctx: dict = None,
         vision_ctx:   dict = None,
         session_ctx:  dict = None,   # ← Day 63
+        intermarket_ctx: dict = None, # ← Day 65
     ) -> dict:
 
         context = self._build_context(
@@ -113,7 +133,8 @@ JSON schema:
             fib_ctx or {},
             advanced_pat_ctx or {},
             vision_ctx or {},
-            session_ctx or {},   # ← Day 63
+            session_ctx or {},        # ← Day 63
+            intermarket_ctx or {},    # ← Day 65
         )
 
         if not LLM_AVAILABLE:
@@ -132,7 +153,8 @@ JSON schema:
             sentiment_conf = (sentiment_ctx or {}).get("sentiment_conf", 50),
             memory_ctx     = memory_ctx or {},
             smc_ctx        = smc_ctx or {},
-            session_ctx    = session_ctx or {},   # ← Day 63
+            session_ctx    = session_ctx or {},      # ← Day 63
+            intermarket_ctx = intermarket_ctx or {},  # ← Day 65
         )
 
         result = {
@@ -145,6 +167,7 @@ JSON schema:
         log.info(
             f"[MasterAnalyst] {symbol} | "
             f"Session: {(session_ctx or {}).get('current_session', 'N/A')} | "
+            f"Macro: {(intermarket_ctx or {}).get('macro_regime', 'N/A')} | "
             f"Signal: {parsed.get('trade_plan', {}).get('signal')} | "
             f"Final Conf: {final_conf}%"
         )
@@ -159,7 +182,8 @@ JSON schema:
         memory_ctx, bias_ctx,
         smc_ctx, fib_ctx, advanced_pat_ctx,
         vision_ctx,
-        session_ctx,   # ← Day 63
+        session_ctx,        # ← Day 63
+        intermarket_ctx,    # ← Day 65
     ) -> str:
 
         # ── Technical ─────────────────────────────────────────
@@ -208,7 +232,7 @@ JSON schema:
         sent_conf    = sentiment_ctx.get("sentiment_conf", 0)
         retail_long  = sentiment_ctx.get("retail_long_pct", 50)
         fg_label     = sentiment_ctx.get("fg_label", "NEUTRAL")
-        dxy_trend    = sentiment_ctx.get("dxy_trend", "NEUTRAL")
+        dxy_trend_sent = sentiment_ctx.get("dxy_trend", "NEUTRAL")
         sent_reasons = sentiment_ctx.get("sentiment_reasons", [])
 
         # ── News ──────────────────────────────────────────────
@@ -265,12 +289,35 @@ JSON schema:
         preferred_pairs  = session_ctx.get("preferred_pairs", [])
         gmt_time         = session_ctx.get("gmt_time", "N/A")
 
+        # ── Intermarket / Macro (Day 65) ───────────────────────
+        dxy_trend         = intermarket_ctx.get("dxy_trend", "NEUTRAL")
+        dxy_change        = intermarket_ctx.get("dxy_change_pct", 0)
+        gold_trend        = intermarket_ctx.get("gold_trend", "NEUTRAL")
+        oil_trend         = intermarket_ctx.get("oil_trend", "NEUTRAL")
+        us10y_trend       = intermarket_ctx.get("us10y_trend", "NEUTRAL")
+        sp500_trend       = intermarket_ctx.get("sp500_trend", "NEUTRAL")
+        vix_value         = intermarket_ctx.get("vix_value")
+        vix_trend         = intermarket_ctx.get("vix_trend", "NEUTRAL")
+        macro_regime      = intermarket_ctx.get("macro_regime", "NEUTRAL")
+        macro_regime_conf = intermarket_ctx.get("macro_regime_confidence", 0)
+        trading_mode      = intermarket_ctx.get("trading_mode", "NORMAL")
+        usd_bias          = intermarket_ctx.get("usd_bias", "NEUTRAL")
+        usd_confirmations = intermarket_ctx.get("usd_confirmations", [])
+        macro_pair_bias   = intermarket_ctx.get("macro_pair_bias", "NEUTRAL")
+        macro_currency_bias = intermarket_ctx.get("macro_currency_bias", {})
+        macro_score       = intermarket_ctx.get("macro_score", 0)
+        cross_asset_conf  = intermarket_ctx.get("cross_asset_confirmed", False)
+        cross_asset_note  = intermarket_ctx.get("cross_asset_note", "")
+        event_risk_elev   = intermarket_ctx.get("event_risk_elevated", False)
+        event_risk_pen    = intermarket_ctx.get("event_risk_penalty", 0)
+        macro_corr        = intermarket_ctx.get("macro_correlations", {})
+
         ctx = {
             "pair":      symbol,
             "timeframe": timeframe,
             "timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
 
-            # ── Day 63: Session Intelligence (first block — highest priority) ──
+            # ── Day 63: Session Intelligence ──
             "session_intelligence": {
                 "current_session":       curr_session,
                 "gmt_time":              gmt_time,
@@ -292,6 +339,31 @@ JSON schema:
                 "smc_session_fusion_allowed": fusion_allowed,
                 "smc_session_fusion_score":   fusion_score,
                 "preferred_pairs":       preferred_pairs[:5],
+            },
+
+            # ── Day 65: Global Market / Intermarket Intelligence ──
+            "global_market_intelligence": {
+                "dxy_trend":               dxy_trend,
+                "dxy_change_pct":          dxy_change,
+                "gold_trend":              gold_trend,
+                "oil_trend":               oil_trend,
+                "us10y_yield_trend":       us10y_trend,
+                "sp500_trend":             sp500_trend,
+                "vix_value":               vix_value,
+                "vix_trend":               vix_trend,
+                "macro_regime":            macro_regime,          # RISK_ON / RISK_OFF / NEUTRAL
+                "macro_regime_confidence": macro_regime_conf,
+                "trading_mode":            trading_mode,          # NORMAL / CAUTIOUS / DEFENSIVE
+                "usd_bias":                usd_bias,              # STRONG / MODERATE / NEUTRAL
+                "usd_confirmations":       usd_confirmations,
+                "macro_pair_bias":         macro_pair_bias,       # BUY / SELL / NEUTRAL for THIS pair
+                "macro_currency_bias":     macro_currency_bias,
+                "macro_score":             macro_score,           # 0-100
+                "cross_asset_confirmed":   cross_asset_conf,
+                "cross_asset_note":        cross_asset_note,
+                "event_risk_elevated":     event_risk_elev,
+                "event_risk_penalty":      event_risk_pen,
+                "intermarket_correlations": macro_corr,
             },
 
             "price_action": {
@@ -366,7 +438,7 @@ JSON schema:
                 "confidence":      sent_conf,
                 "retail_long_pct": retail_long,
                 "fear_greed":      fg_label,
-                "dxy_trend":       dxy_trend,
+                "dxy_trend":       dxy_trend_sent,
                 "key_reasons":     sent_reasons[:3],
             },
 
@@ -393,9 +465,11 @@ JSON schema:
 
     def _call_llm(self, context: str) -> str:
         user_prompt = (
-            "Here is the complete market intelligence package (session-aware) for analysis:\n\n"
+            "Here is the complete market intelligence package (session-aware AND "
+            "macro/intermarket-aware) for analysis:\n\n"
             f"{context}\n\n"
-            "IMPORTANT: Check session_intelligence block first. Follow session rules strictly.\n"
+            "IMPORTANT: Check session_intelligence block first, then "
+            "global_market_intelligence block. Follow session rules and macro rules strictly.\n"
             "Provide your professional trade decision as JSON."
         )
 
@@ -447,33 +521,38 @@ JSON schema:
         sentiment_conf: int,
         memory_ctx:     dict,
         smc_ctx:        dict = None,
-        session_ctx:    dict = None,   # ← Day 63
+        session_ctx:    dict = None,       # ← Day 63
+        intermarket_ctx: dict = None,       # ← Day 65
     ) -> int:
         """
         Weighted average:
             LLM opinion          : 30%
-            Technical signals    : 25%
-            Sentiment            : 12%
-            Historical success   : 8%
-            SMC confluence       : 10%
-            Session score        : 15%   ← Day 63
+            Technical signals    : 20%
+            Sentiment             : 10%
+            Historical success    : 8%
+            SMC confluence        : 10%
+            Session score         : 12%
+            Macro score (Day 65)  : 10%   ← new
 
         Total = 100%
         """
-        smc_ctx     = smc_ctx or {}
-        session_ctx = session_ctx or {}
+        smc_ctx         = smc_ctx or {}
+        session_ctx      = session_ctx or {}
+        intermarket_ctx  = intermarket_ctx or {}
 
-        win_rate     = memory_ctx.get("overall_win_rate", 50)
-        smc_score    = smc_ctx.get("smc_score", 50)
+        win_rate      = memory_ctx.get("overall_win_rate", 50)
+        smc_score     = smc_ctx.get("smc_score", 50)
         session_score = session_ctx.get("session_score", 50)
+        macro_score   = intermarket_ctx.get("macro_score", 50)
 
         weighted = (
             llm_conf       * 0.30 +
-            technical_conf * 0.25 +
-            sentiment_conf * 0.12 +
+            technical_conf * 0.20 +
+            sentiment_conf * 0.10 +
             win_rate       * 0.08 +
             smc_score      * 0.10 +
-            session_score  * 0.15
+            session_score  * 0.12 +
+            macro_score    * 0.10
         )
 
         # Session risk multiplier adjustment
@@ -499,6 +578,16 @@ JSON schema:
         # Session overlap bonus
         if session_ctx.get("is_overlap"):
             weighted += 2
+
+        # Day 65 — Macro alignment bonus / event risk penalty
+        if intermarket_ctx.get("cross_asset_confirmed"):
+            weighted += 3
+        if intermarket_ctx.get("event_risk_elevated"):
+            weighted -= intermarket_ctx.get("event_risk_penalty", 0)
+        if intermarket_ctx.get("trading_mode") == "DEFENSIVE":
+            weighted -= 8
+        elif intermarket_ctx.get("trading_mode") == "CAUTIOUS":
+            weighted -= 4
 
         # Dead zone penalty (should not reach here normally)
         if session_ctx.get("is_dead_zone"):
@@ -551,7 +640,7 @@ JSON schema:
         bar   = "═" * 56
 
         print(f"\n{bar}")
-        print(f"  🧠  MASTER ANALYST  (Day 42 + 44 + 47 + 63)")
+        print(f"  🧠  MASTER ANALYST  (Day 42 + 44 + 47 + 63 + 65)")
         print(bar)
         print(f"  Signal          : {icon}  {sig}")
         print(f"  Final Confidence: {result.get('final_confidence', 0)}%")

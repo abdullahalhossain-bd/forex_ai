@@ -1,4 +1,5 @@
 # dashboard/components/data_loader.py  —  Day 56 | Shared Data Access Layer
+#                                          + Day 65 Global Market State
 # ============================================================
 # সব dashboard page এই module দিয়ে memory/*.json ফাইল পড়ে।
 # Day 52-55-এর learning modules (confidence_engine, deep_analyzer,
@@ -6,8 +7,12 @@
 # strategy_config) যেসব path-এ write করে, এখানে সেই একই path ব্যবহার
 # করা হয়েছে — যাতে dashboard সরাসরি live data দেখাতে পারে।
 #
-# কোনো ফাইল না থাকলে (এখনো কোনো trade হয়নি), ছোট demo data fallback
-# করে — dashboard কখনো খালি/ভাঙা দেখাবে না।
+# Day 65: IntermarketEngine memory/intermarket_history.json-এ যা লেখে
+# (analysis/intermarket.py দেখুন), সেখান থেকে সর্বশেষ entry পড়ে
+# dashboard-এর "🌎 Global Market State" প্যানেল দেখায়।
+#
+# কোনো ফাইল না থাকলে (এখনো কোনো trade/analysis হয়নি), ছোট demo data
+# fallback করে — dashboard কখনো খালি/ভাঙা দেখাবে না।
 # ============================================================
 
 import json
@@ -29,6 +34,8 @@ PENDING_OPTIMIZER_PATH   = "memory/pending_optimizer_approvals.json"
 WEEKLY_REPORTS_PATH      = "memory/weekly_reports.json"
 OPTIMIZER_RUN_LOG_PATH   = "memory/optimizer_run_log.json"
 SYSTEM_CONTROL_PATH      = "memory/system_control.json"
+# Day 65
+INTERMARKET_HISTORY_PATH = "memory/intermarket_history.json"
 
 
 def load_json(path: str, default):
@@ -330,4 +337,53 @@ def get_system_health() -> dict:
         "database": "OK",
         "vision_ai": "OK",
         "last_restart": "2 days ago",
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+# Day 65 — GLOBAL MARKET STATE  (🌎 Intermarket Dashboard Panel)
+# ══════════════════════════════════════════════════════════════
+
+def get_global_market_state() -> dict:
+    """
+    analysis/intermarket.py-এর IntermarketEngine._save_memory() যা লেখে
+    (memory/intermarket_history.json), তার সর্বশেষ entry পড়ে dashboard
+    panel-এর জন্য ready ফরম্যাটে ফেরত দেয়। কোনো history না থাকলে demo
+    data fallback করে — doc-এর mockup অনুযায়ী।
+    """
+    history = load_json(INTERMARKET_HISTORY_PATH, [])
+    if history:
+        latest = history[-1]
+        trend = lambda v: "UP" if (v or 0) > 0 else ("DOWN" if (v or 0) < 0 else "FLAT")
+        return {
+            "pair":          latest.get("pair", "—"),
+            "dxy_value":     latest.get("dxy_value"),
+            "dxy_trend":     latest.get("dxy_trend", "NEUTRAL"),
+            "gold_trend":    trend(latest.get("gold_change")),
+            "oil_trend":     trend(latest.get("oil_change")),
+            "bond_yield":    latest.get("bond_yield"),
+            "sp500_trend":   trend(latest.get("sp500_change")),
+            "vix_value":     latest.get("vix_value"),
+            "macro_regime":  latest.get("regime", "NEUTRAL"),
+            "macro_score":   latest.get("macro_score", 0),
+            "pair_bias":     latest.get("pair_bias", "NEUTRAL"),
+            "timestamp":     latest.get("timestamp"),
+            "source":        "live",
+        }
+
+    # Demo fallback (matches the Day 65 doc's dashboard mockup)
+    return {
+        "pair":         "EURUSD",
+        "dxy_value":    104.3,
+        "dxy_trend":    "BULLISH",
+        "gold_trend":   "DOWN",
+        "oil_trend":    "FLAT",
+        "bond_yield":   4.28,
+        "sp500_trend":  "DOWN",
+        "vix_value":    24.5,
+        "macro_regime": "RISK_OFF",
+        "macro_score":  70,
+        "pair_bias":    "SELL",
+        "timestamp":    datetime.now(timezone.utc).isoformat(),
+        "source":       "demo",
     }

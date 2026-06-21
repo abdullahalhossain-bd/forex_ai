@@ -87,3 +87,37 @@ def validate_mt5_config() -> None:
 # মেইন স্ক্রিপ্ট বা পাইপলাইনে রান করার আগে অটোমেটিক ভ্যালিডেশন চেক
 if EXECUTION_MODE == "mt5_demo":
     validate_mt5_config()
+    # Add these to the existing Config class
+class Config:
+    # ... existing configuration ...
+    
+    # Forex data configuration
+    FOREX_PAIRS = [
+        'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF',
+        'AUD/USD', 'USD/CAD', 'NZD/USD',
+        'EUR/GBP', 'EUR/JPY', 'GBP/JPY'
+    ]
+    
+    # Data update configuration
+    DATA_UPDATE_TIME = "06:00"  # Daily update at 6 AM
+    DATA_UPDATE_TIMEZONE = "UTC"
+    DATA_HISTORY_DAYS = 365 * 5  # 5 years of history
+    DATA_UPDATE_RETRY_ATTEMPTS = 3
+    DATA_UPDATE_RETRY_DELAY = 300  # 5 minutes
+    
+    # API credentials (should be in environment variables)
+    OANDA_API_KEY = os.environ.get('OANDA_API_KEY')
+    OANDA_ACCOUNT_ID = os.environ.get('OANDA_ACCOUNT_ID')
+    
+    # Database configuration
+    DB_HOST = os.environ.get('DB_HOST', 'localhost')
+    DB_PORT = os.environ.get('DB_PORT', '5432')
+    DB_NAME = os.environ.get('DB_NAME', 'forex_ai')
+    DB_USER = os.environ.get('DB_USER', 'postgres')
+    DB_PASSWORD = os.environ.get('DB_PASSWORD', '')
+    
+    # Logging configuration
+    LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
+    LOG_FILE = 'logs/forex_ai.log'
+    LOG_MAX_SIZE = 10 * 1024 * 1024  # 10 MB
+    LOG_BACKUP_COUNT = 5

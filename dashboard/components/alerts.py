@@ -1,7 +1,9 @@
 # dashboard/components/alerts.py  —  Day 56 | Alerts, System Health, Emergency Controls
+#                                    + Day 65 | Global Market State Panel
 # ============================================================
 # ⭐ Bonus 3: System Health Panel
 # ⭐ Bonus 4: Emergency Control Panel
+# ⭐ Day 65: Global Market State Panel ("🌎 Global Market State")
 #
 # Emergency panel সরাসরি trading engine-কে control করে না (dashboard ও
 # engine আলাদা process) — বরং memory/system_control.json-এ একটা flag
@@ -94,3 +96,55 @@ def pending_approvals_alert(pending: list, page_hint: str = "Strategy Lab") -> N
             "WARNING",
             f"⏸️ {len(pending)} optimizer suggestion(s) awaiting your approval — see **{page_hint}**.",
         )
+
+
+# ══════════════════════════════════════════════════════════════
+# Day 65 — 🌎 GLOBAL MARKET STATE PANEL
+# ══════════════════════════════════════════════════════════════
+
+def global_market_state_panel(state: dict) -> None:
+    """
+    IntermarketEngine (analysis/intermarket.py)-এর সর্বশেষ output
+    দেখায় — DXY/Gold/Oil/US10Y/SP500/VIX trend + macro regime + pair bias।
+    Doc-এর mockup অনুযায়ী:
+
+        🌎 Global Market State
+        DXY: ↑ Strong   Gold: ↓ Weak   US10Y: ↑ Rising
+        SP500: ↓        VIX: ↑ Fear    Environment: RISK OFF
+    """
+    st.markdown(f"#### 🌎 Global Market State — `{state.get('pair', '—')}`")
+
+    def trend_badge(label: str, trend: str) -> str:
+        trend = (trend or "NEUTRAL").upper()
+        arrow_map = {
+            "BULLISH": "↑", "UP": "↑", "STRONG": "↑",
+            "BEARISH": "↓", "DOWN": "↓", "WEAK": "↓",
+            "NEUTRAL": "→", "FLAT": "→",
+        }
+        color_map = {
+            "BULLISH": "🟢", "UP": "🟢",
+            "BEARISH": "🔴", "DOWN": "🔴",
+            "NEUTRAL": "🟡", "FLAT": "🟡",
+        }
+        arrow = arrow_map.get(trend, "→")
+        icon  = color_map.get(trend, "🟡")
+        return f"{icon} {arrow} {trend}"
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("DXY", f"{state.get('dxy_value', '—')}", trend_badge("DXY", state.get("dxy_trend")))
+    c2.metric("Gold", trend_badge("Gold", state.get("gold_trend")))
+    c3.metric("US10Y", f"{state.get('bond_yield', '—')}%")
+    c4.metric("S&P500", trend_badge("SP500", state.get("sp500_trend")))
+    c5.metric("VIX", f"{state.get('vix_value', '—')}")
+
+    regime = (state.get("macro_regime") or "NEUTRAL").upper()
+    regime_icon = {"RISK_ON": "🟢", "RISK_OFF": "🔴", "NEUTRAL": "🟡"}.get(regime, "⚪")
+    bias = state.get("pair_bias", "NEUTRAL")
+    bias_icon = {"BUY": "🟢", "SELL": "🔴", "NEUTRAL": "🟡"}.get(bias, "⚪")
+
+    cc1, cc2 = st.columns(2)
+    cc1.markdown(f"**Environment:** {regime_icon} {regime.replace('_', ' ')}  |  **Macro Score:** {state.get('macro_score', 0)}/100")
+    cc2.markdown(f"**Macro Pair Bias ({state.get('pair', '—')}):** {bias_icon} {bias}")
+
+    if state.get("source") == "demo":
+        st.caption("⚠️ No live intermarket history found yet (memory/intermarket_history.json) — showing demo data.")

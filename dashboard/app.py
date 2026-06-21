@@ -1,4 +1,5 @@
 # dashboard/app.py  —  Day 56 | AI Trading Command Center (Home)
+#                       + Day 65 | Global Market State Panel
 # ============================================================
 # এটা Day 56-এর মূল entry point। Streamlit multipage convention অনুযায়ী
 # `streamlit run dashboard/app.py` চালালে এই ফাইল হোমপেজ হিসেবে খোলে,
@@ -12,8 +13,9 @@
 #   5_risk_monitor.py      → 🛡 Risk Monitor
 #
 # Home page নিজে দেখায়: system health snapshot, today's quick KPIs,
-# এবং Emergency Control Panel (⭐ Bonus 4) — যেটা সব পেজ থেকেই গুরুত্বপূর্ণ
-# বলে এখানে top-level রাখা হয়েছে।
+# Emergency Control Panel (⭐ Bonus 4), এবং (Day 65) Global Market
+# State — কারণ macro context গোটা system-এর জন্য প্রাসঙ্গিক, তাই
+# top-level home page-এ রাখা হয়েছে।
 # ============================================================
 
 import sys
@@ -60,7 +62,7 @@ if refresh_on:
 # Header
 # =========================
 st.title("🧠 AI Trading Command Center")
-st.caption("Day 56 — One place to see everything your AI Trader sees, learns, and decides.")
+st.caption("Day 65 — One place to see everything your AI Trader sees, learns, and decides — now with global macro context.")
 
 ctrl = data_loader.get_system_control()
 status_icon = "🟢" if ctrl.get("trading_enabled") else "🔴"
@@ -83,6 +85,14 @@ kpi_cols[0].metric("Today's P/L", f"${pnl['pnl']:,.2f}")
 kpi_cols[1].metric("Win Rate Today", f"{pnl['win_rate']}%" if pnl["win_rate"] is not None else "—")
 kpi_cols[2].metric("Trades Today", pnl["trades"])
 kpi_cols[3].metric("Current Risk / Trade", f"{risk['current_risk_pct']}%")
+
+st.divider()
+
+# =========================
+# Global Market State  (⭐ Day 65)
+# =========================
+global_state = data_loader.get_global_market_state()
+alerts.global_market_state_panel(global_state)
 
 st.divider()
 
