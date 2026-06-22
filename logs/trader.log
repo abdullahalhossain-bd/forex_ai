@@ -6329,3 +6329,862 @@ If this is a private repository, make sure to pass a token having permission to 
 2026-06-22 01:39:28 | INFO     | ai_trader                 |   Memory       : 0 decisions | WR: N/A%
 2026-06-22 01:39:28 | INFO     | ai_trader                 |   Completed in : 0.9s
 2026-06-22 01:39:28 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:50:56 | INFO     | database.db               | Database ready: database/trader.db
+2026-06-22 01:50:57 | INFO     | mt5_connection            | ════════════════════════════════════════════
+2026-06-22 01:50:57 | INFO     | mt5_connection            |   🤖  AI TRADER — MT5 CONNECTION
+2026-06-22 01:50:57 | INFO     | mt5_connection            | ════════════════════════════════════════════
+2026-06-22 01:50:57 | INFO     | mt5_connection            |   Connected : MetaQuotes-Demo
+2026-06-22 01:50:57 | INFO     | mt5_connection            |   Account   : 108647429
+2026-06-22 01:50:57 | INFO     | mt5_connection            |   Status    : ✅ Ready
+2026-06-22 01:50:57 | INFO     | mt5_connection            |   Balance   : $100000.00
+2026-06-22 01:50:57 | INFO     | mt5_connection            | ════════════════════════════════════════════
+2026-06-22 01:50:57 | INFO     | mt5_connection            | [MT5Connection] Disconnected
+2026-06-22 01:50:58 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:50:58 | INFO     | data.fetcher              | Fetching EURUSD | 15m | 5 candles...
+2026-06-22 01:51:00 | INFO     | data.fetcher              | [OK] Got 5 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:51:04 | INFO     | ai_analyst                | Groq client initialized | model=llama-3.3-70b-versatile
+2026-06-22 01:51:08 | INFO     | ai_analyst                | Gemini client initialized (fallback ready) | model=gemini-2.0-flash
+2026-06-22 01:51:26 | INFO     | approval_mode             | [ApprovalMode] Active: Mode 3 — AUTONOMOUS
+2026-06-22 01:51:26 | INFO     | trade_memory              | [TradeMemory] Downloading embedding model: all-MiniLM-L6-v2 (~80MB, once only)
+2026-06-22 01:51:29 | WARNING  | trade_memory              | [TradeMemory] Embedding model load failed: sentence-transformers/all-MiniLM-L6-v2 is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `hf auth login` or by passing `token=<your_token>`
+  Vector memory disabled — trading continues normally.
+  To enable: pip install sentence-transformers  then re-run.
+2026-06-22 01:51:29 | WARNING  | trade_memory              | [TradeMemory] Running without vector memory (embedding model unavailable)
+2026-06-22 01:51:29 | INFO     | database.db               | Database ready: database/trader.db
+2026-06-22 01:51:29 | INFO     | paper_trader              | PaperTrader ready | Balance: $10000.00 | Open positions restored: 0
+2026-06-22 01:51:29 | INFO     | trade_memory              | [TradeMemory] Downloading embedding model: all-MiniLM-L6-v2 (~80MB, once only)
+2026-06-22 01:51:31 | WARNING  | trade_memory              | [TradeMemory] Embedding model load failed: sentence-transformers/all-MiniLM-L6-v2 is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `hf auth login` or by passing `token=<your_token>`
+  Vector memory disabled — trading continues normally.
+  To enable: pip install sentence-transformers  then re-run.
+2026-06-22 01:51:31 | WARNING  | trade_memory              | [TradeMemory] Running without vector memory (embedding model unavailable)
+2026-06-22 01:51:31 | INFO     | mt5_connection            | ════════════════════════════════════════════
+2026-06-22 01:51:31 | INFO     | mt5_connection            |   🤖  AI TRADER — MT5 CONNECTION
+2026-06-22 01:51:31 | INFO     | mt5_connection            | ════════════════════════════════════════════
+2026-06-22 01:51:31 | INFO     | mt5_connection            |   Connected : MetaQuotes-Demo
+2026-06-22 01:51:31 | INFO     | mt5_connection            |   Account   : 108647429
+2026-06-22 01:51:31 | INFO     | mt5_connection            |   Status    : ✅ Ready
+2026-06-22 01:51:31 | INFO     | mt5_connection            |   Balance   : $100000.00
+2026-06-22 01:51:31 | INFO     | mt5_connection            | ════════════════════════════════════════════
+2026-06-22 01:51:31 | INFO     | execution_router          | [ExecutionRouter] Mode: MT5_DEMO (real broker, demo account)
+2026-06-22 01:51:31 | INFO     | ai_trader                 | AITrader Week3-Day21 | EURUSD 15m | Mode: MT5_DEMO | Approval: AUTONOMOUS | Risk Balance: $10000 | Paper Balance: $10000
+2026-06-22 01:51:31 | INFO     | trade_memory              | [TradeMemory] Downloading embedding model: all-MiniLM-L6-v2 (~80MB, once only)
+2026-06-22 01:51:33 | WARNING  | trade_memory              | [TradeMemory] Embedding model load failed: sentence-transformers/all-MiniLM-L6-v2 is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `hf auth login` or by passing `token=<your_token>`
+  Vector memory disabled — trading continues normally.
+  To enable: pip install sentence-transformers  then re-run.
+2026-06-22 01:51:33 | WARNING  | trade_memory              | [TradeMemory] Running without vector memory (embedding model unavailable)
+2026-06-22 01:51:33 | INFO     | database.db               | Database ready: database/trader.db
+2026-06-22 01:51:33 | INFO     | paper_trader              | PaperTrader ready | Balance: $10000.00 | Open positions restored: 0
+2026-06-22 01:51:33 | INFO     | trade_memory              | [TradeMemory] Downloading embedding model: all-MiniLM-L6-v2 (~80MB, once only)
+2026-06-22 01:51:36 | WARNING  | trade_memory              | [TradeMemory] Embedding model load failed: sentence-transformers/all-MiniLM-L6-v2 is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `hf auth login` or by passing `token=<your_token>`
+  Vector memory disabled — trading continues normally.
+  To enable: pip install sentence-transformers  then re-run.
+2026-06-22 01:51:36 | WARNING  | trade_memory              | [TradeMemory] Running without vector memory (embedding model unavailable)
+2026-06-22 01:51:36 | INFO     | mt5_connection            | ════════════════════════════════════════════
+2026-06-22 01:51:36 | INFO     | mt5_connection            |   🤖  AI TRADER — MT5 CONNECTION
+2026-06-22 01:51:36 | INFO     | mt5_connection            | ════════════════════════════════════════════
+2026-06-22 01:51:36 | INFO     | mt5_connection            |   Connected : MetaQuotes-Demo
+2026-06-22 01:51:36 | INFO     | mt5_connection            |   Account   : 108647429
+2026-06-22 01:51:36 | INFO     | mt5_connection            |   Status    : ✅ Ready
+2026-06-22 01:51:36 | INFO     | mt5_connection            |   Balance   : $100000.00
+2026-06-22 01:51:36 | INFO     | mt5_connection            | ════════════════════════════════════════════
+2026-06-22 01:51:36 | INFO     | execution_router          | [ExecutionRouter] Mode: MT5_DEMO (real broker, demo account)
+2026-06-22 01:51:36 | INFO     | ai_trader                 | AITrader Week3-Day21 | GBPUSD 15m | Mode: MT5_DEMO | Approval: AUTONOMOUS | Risk Balance: $10000 | Paper Balance: $10000
+2026-06-22 01:51:36 | INFO     | trade_memory              | [TradeMemory] Downloading embedding model: all-MiniLM-L6-v2 (~80MB, once only)
+2026-06-22 01:51:38 | WARNING  | trade_memory              | [TradeMemory] Embedding model load failed: sentence-transformers/all-MiniLM-L6-v2 is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `hf auth login` or by passing `token=<your_token>`
+  Vector memory disabled — trading continues normally.
+  To enable: pip install sentence-transformers  then re-run.
+2026-06-22 01:51:38 | WARNING  | trade_memory              | [TradeMemory] Running without vector memory (embedding model unavailable)
+2026-06-22 01:51:38 | INFO     | database.db               | Database ready: database/trader.db
+2026-06-22 01:51:38 | INFO     | paper_trader              | PaperTrader ready | Balance: $10000.00 | Open positions restored: 0
+2026-06-22 01:51:38 | INFO     | trade_memory              | [TradeMemory] Downloading embedding model: all-MiniLM-L6-v2 (~80MB, once only)
+2026-06-22 01:51:40 | WARNING  | trade_memory              | [TradeMemory] Embedding model load failed: sentence-transformers/all-MiniLM-L6-v2 is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `hf auth login` or by passing `token=<your_token>`
+  Vector memory disabled — trading continues normally.
+  To enable: pip install sentence-transformers  then re-run.
+2026-06-22 01:51:40 | WARNING  | trade_memory              | [TradeMemory] Running without vector memory (embedding model unavailable)
+2026-06-22 01:51:40 | INFO     | mt5_connection            | ════════════════════════════════════════════
+2026-06-22 01:51:40 | INFO     | mt5_connection            |   🤖  AI TRADER — MT5 CONNECTION
+2026-06-22 01:51:40 | INFO     | mt5_connection            | ════════════════════════════════════════════
+2026-06-22 01:51:40 | INFO     | mt5_connection            |   Connected : MetaQuotes-Demo
+2026-06-22 01:51:40 | INFO     | mt5_connection            |   Account   : 108647429
+2026-06-22 01:51:40 | INFO     | mt5_connection            |   Status    : ✅ Ready
+2026-06-22 01:51:40 | INFO     | mt5_connection            |   Balance   : $100000.00
+2026-06-22 01:51:40 | INFO     | mt5_connection            | ════════════════════════════════════════════
+2026-06-22 01:51:40 | INFO     | execution_router          | [ExecutionRouter] Mode: MT5_DEMO (real broker, demo account)
+2026-06-22 01:51:40 | INFO     | ai_trader                 | AITrader Week3-Day21 | USDJPY 15m | Mode: MT5_DEMO | Approval: AUTONOMOUS | Risk Balance: $10000 | Paper Balance: $10000
+2026-06-22 01:51:41 | ERROR    | telegram_bot              | ❌ Failed to send Telegram alert (markdown): Can't parse entities: can't find end of the entity starting at byte offset 33
+2026-06-22 01:51:43 | INFO     | ai_trader                 | [System] Telegram command polling thread started
+2026-06-22 01:51:43 | INFO     | ai_trader                 | [System] Backup created: backups\20260621_195143
+2026-06-22 01:51:43 | INFO     | ai_trader                 | [System] Starting autonomous loop | Pairs=['EURUSD', 'GBPUSD', 'USDJPY'] | Timeframe=15m | Mode=MT5_DEMO | Scanner=OFF | Balance=$10000
+2026-06-22 01:51:43 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:51:43 | INFO     | ai_trader                 |   AITrader Week3-Day21 — EURUSD 15m
+2026-06-22 01:51:43 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:51:43 | INFO     | ai_trader                 | [1/9] Market Agent...
+2026-06-22 01:51:43 | INFO     | market_agent              | [MarketAgent] Running for EURUSD 15m
+2026-06-22 01:51:43 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:51:43 | INFO     | analysis.timeframe        | MTF: Fetching EURUSD 1d
+2026-06-22 01:51:43 | INFO     | data.fetcher              | Fetching EURUSD | 1d | 200 candles...
+2026-06-22 01:51:43 | INFO     | data.fetcher              | [OK] Got 129 candles | Latest: 2026-06-19 00:00:00
+2026-06-22 01:51:43 | INFO     | analysis.timeframe        | MTF: 1d → trend=bearish rsi=32.62
+2026-06-22 01:51:43 | INFO     | analysis.timeframe        | MTF: Fetching EURUSD 4h
+2026-06-22 01:51:43 | INFO     | data.fetcher              | Fetching EURUSD | 4h | 200 candles...
+2026-06-22 01:51:43 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 20:00:00
+2026-06-22 01:51:43 | INFO     | analysis.timeframe        | MTF: 4h → trend=strong_bearish rsi=36.25
+2026-06-22 01:51:43 | INFO     | analysis.timeframe        | MTF: Fetching EURUSD 1h
+2026-06-22 01:51:43 | INFO     | data.fetcher              | Fetching EURUSD | 1h | 200 candles...
+2026-06-22 01:51:44 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:00:00
+2026-06-22 01:51:44 | INFO     | analysis.timeframe        | MTF: 1h → trend=sideways rsi=48.08
+2026-06-22 01:51:44 | INFO     | analysis.timeframe        | MTF: Fetching EURUSD 15m
+2026-06-22 01:51:44 | INFO     | data.fetcher              | Fetching EURUSD | 15m | 200 candles...
+2026-06-22 01:51:44 | INFO     | telegram_bot              | 🤖 Telegram Command Polling Started (7 commands registered)...
+2026-06-22 01:51:44 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:51:44 | INFO     | analysis.timeframe        | MTF: 15m → trend=sideways rsi=41.98
+2026-06-22 01:51:44 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:51:44 | INFO     | data.fetcher              | Fetching EURUSD | 15m | 300 candles...
+2026-06-22 01:51:44 | INFO     | data.fetcher              | [OK] Got 300 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:51:44 | INFO     | data.validator            | Validating data: EURUSD 15m | rows=300
+2026-06-22 01:51:44 | INFO     | data.validator            | Data validation passed
+2026-06-22 01:51:44 | INFO     | analysis.market_regime    | Regime: TRENDING | Direction: BEARISH | Strength: MODERATE | Volatility: NORMAL
+2026-06-22 01:51:44 | INFO     | market_agent              | [MarketAgent] Done — Price: 1.14692 | Trend: sideways | Regime: TRENDING
+2026-06-22 01:51:44 | INFO     | ai_trader                 | [2/9] Circuit Breaker Gate...
+2026-06-22 01:51:44 | INFO     | ai_trader                 | [3/9] Analysis Agent...
+2026-06-22 01:51:44 | INFO     | analysis_agent            | [AnalysisAgent] Running Day 65 pipeline for EURUSD (15m)
+2026-06-22 01:51:44 | INFO     | session_analyzer          | [SessionAnalyzer] NEW_YORK | EURUSD | Strategy: TREND_CONTINUATION | Score: 17 | Trade: ❌
+2026-06-22 01:51:45 | INFO     | analysis.advanced_patterns | Advanced patterns detected: 11
+2026-06-22 01:51:45 | INFO     | analysis.advanced_patterns | False pattern filtered: DOUBLE_BOTTOM — Confidence 54% too low
+2026-06-22 01:51:45 | INFO     | analysis.advanced_patterns | False pattern filtered: DOUBLE_BOTTOM — Confidence 54% too low
+2026-06-22 01:51:45 | INFO     | analysis.advanced_patterns | False pattern filtered: DOUBLE_BOTTOM — Confidence 53% too low
+2026-06-22 01:51:45 | INFO     | analysis.advanced_patterns | Advanced patterns detected: 11
+2026-06-22 01:51:45 | INFO     | analysis.advanced_patterns | False pattern filtered: DOUBLE_BOTTOM — Confidence 54% too low
+2026-06-22 01:51:45 | INFO     | analysis.advanced_patterns | False pattern filtered: DOUBLE_BOTTOM — Confidence 54% too low
+2026-06-22 01:51:45 | INFO     | analysis.advanced_patterns | False pattern filtered: DOUBLE_BOTTOM — Confidence 53% too low
+2026-06-22 01:51:45 | INFO     | analysis.fibonacci        | FibonacciEngine ready | TF=15m | swing_window=7
+2026-06-22 01:51:45 | INFO     | analysis.fibonacci        | Fib Analysis | Swing: 1.14220→1.14903 | Trend: BEARISH | Position: 61.8% | Signal: SELL
+2026-06-22 01:51:45 | INFO     | analysis.market_bias      | Bias: STRONG_SELL | Confidence: 100% | Conflicts: 0
+2026-06-22 01:51:45 | INFO     | sentiment_data            | [SentimentData] Fetching all sentiment data for EURUSD
+2026-06-22 01:51:45 | INFO     | sentiment_data            | [RetailData] EURUSD | Approx Long: 50.1%
+2026-06-22 01:51:46 | INFO     | sentiment_data            | [F&G API] Value: 23.0 | Label: Extreme Fear
+2026-06-22 01:51:50 | INFO     | sentiment_data            | [CurrStr] Calculated: {'USD': 100.0, 'EUR': 50.1, 'GBP': 76.6, 'JPY': 63.5, 'AUD': 93.1, 'CAD': 57.5, 'CHF': 24.9, 'NZD': 0.0}
+2026-06-22 01:51:50 | INFO     | sentiment_data            | [DXY] Current: 100.850 | Change: +0.759% | Trend: BULLISH
+2026-06-22 01:51:50 | INFO     | sentiment_data            | [SentimentData] EURUSD | Retail Long: 50.1% | F&G: 23.0 | DXY: BULLISH
+2026-06-22 01:51:50 | INFO     | sentiment_engine          | [Retail] EURUSD | Long: 50.1% | Bias: NEUTRAL | Score: +0
+2026-06-22 01:51:50 | INFO     | sentiment_engine          | [F&G] Value: 23.0 | Label: EXTREME_FEAR | Score: +20
+2026-06-22 01:51:50 | INFO     | sentiment_engine          | [CurrStr] EURUSD | EUR: 50.1 vs USD: 100.0 | Bias: STRONG_BEARISH | Score: -25
+2026-06-22 01:51:50 | INFO     | sentiment_engine          | [DXY] Trend: BULLISH | Change: +0.76% | Impact: STRONG | Score: +20
+2026-06-22 01:51:50 | INFO     | sentiment_engine          | [SentimentEngine] EURUSD | Score: -25 | Bias: BEARISH | Conf: 75%
+2026-06-22 01:51:50 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:51:50 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:51:50 | INFO     | data.fetcher              | Fetching EURUSD | 4h | 150 candles...
+2026-06-22 01:51:50 | INFO     | data.fetcher              | [OK] Got 150 candles | Latest: 2026-06-19 20:00:00
+2026-06-22 01:51:50 | INFO     | data.fetcher              | Fetching EURUSD | 15m | 150 candles...
+2026-06-22 01:51:50 | INFO     | data.fetcher              | [OK] Got 150 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:51:50 | INFO     | order_block               | [OrderBlock] Detected 3 order blocks
+2026-06-22 01:51:50 | INFO     | fvg_detector              | [FVG] Detected 26 fair value gaps
+2026-06-22 01:51:50 | INFO     | smc_engine                | [SMCEngine] EURUSD | Signal: WAIT | Direction: SELL | Score: 15/100 | Grade: INVALID
+2026-06-22 01:51:50 | INFO     | smc_engine                | ════════════════════════════════════════════════════════
+2026-06-22 01:51:50 | INFO     | smc_engine                |   🧠  SMC ENGINE  (Day 44)
+2026-06-22 01:51:50 | INFO     | smc_engine                | ════════════════════════════════════════════════════════
+2026-06-22 01:51:50 | INFO     | smc_engine                |   Pair         : EURUSD
+2026-06-22 01:51:50 | INFO     | smc_engine                |   Signal       : 🟡 WAIT
+2026-06-22 01:51:50 | INFO     | smc_engine                |   Direction    : SELL
+2026-06-22 01:51:50 | INFO     | smc_engine                |   Score        : 15/100
+2026-06-22 01:51:50 | INFO     | smc_engine                |   Grade        : INVALID
+2026-06-22 01:51:50 | INFO     | smc_engine                | 
+2026-06-22 01:51:50 | INFO     | smc_engine                |   ❌ liquidity_sweep        (+20)
+2026-06-22 01:51:50 | INFO     | smc_engine                |   ❌ order_block            (+25)
+2026-06-22 01:51:50 | INFO     | smc_engine                |   ❌ fvg                    (+15)
+2026-06-22 01:51:50 | INFO     | smc_engine                |   ❌ bos                    (+25)
+2026-06-22 01:51:50 | INFO     | smc_engine                |   ✅ confirmation_candle    (+15)
+2026-06-22 01:51:50 | INFO     | smc_engine                | 
+2026-06-22 01:51:50 | INFO     | smc_engine                |   Analysis     : Confirmation candle present on M15.
+2026-06-22 01:51:50 | INFO     | smc_engine                | ════════════════════════════════════════════════════════
+2026-06-22 01:51:50 | INFO     | session_analyzer          | [SessionAnalyzer] NEW_YORK | EURUSD | Strategy: TREND_CONTINUATION | Score: 32 | Trade: ❌
+2026-06-22 01:51:51 | INFO     | macro_data                | [MacroData] DXY=BULLISH Gold=BEARISH VIX=BEARISH SP500=BULLISH
+2026-06-22 01:51:53 | INFO     | correlation_engine        | [CorrelationEngine] EURUSD correlation matrix: {'EURUSD_DXY': -0.35, 'EURUSD_GOLD': 0.41, 'EURUSD_OIL': -0.27, 'EURUSD_US10Y': 0.2, 'EURUSD_SP500': -0.2, 'EURUSD_VIX': 0.26}
+2026-06-22 01:51:53 | INFO     | risk_sentiment            | [RiskSentiment] RISK_ON (conf 75%) | VIX=16.4 (NORMAL) | Mode=NORMAL
+2026-06-22 01:51:53 | INFO     | intermarket_engine        | [IntermarketEngine] EURUSD | Regime: RISK_ON | Macro Score: 90/100 | Pair Bias: SELL
+2026-06-22 01:51:53 | INFO     | news_filter               | Checking news for: {'EUR', 'USD'}
+2026-06-22 01:51:53 | WARNING  | news_filter               | Forex Factory fetch failed: 403 Client Error: Forbidden for url: https://www.forexfactory.com/calendar
+2026-06-22 01:51:53 | WARNING  | news_filter               | Could not fetch live news — using safe fallback
+2026-06-22 01:51:53 | INFO     | news_filter               | ════════════════════════════════════════════
+2026-06-22 01:51:53 | INFO     | news_filter               |   ✅  NEWS FILTER  (Day 43)
+2026-06-22 01:51:53 | INFO     | news_filter               | ════════════════════════════════════════════
+2026-06-22 01:51:53 | INFO     | news_filter               |   Trade allowed : True
+2026-06-22 01:51:53 | INFO     | news_filter               |   Reason        : News fetch failed — proceed with caution
+2026-06-22 01:51:53 | INFO     | news_filter               |   Risk level    : LOW
+2026-06-22 01:51:53 | INFO     | news_filter               | ════════════════════════════════════════════
+2026-06-22 01:51:54 | INFO     | ai_analyst                | Groq client initialized | model=llama-3.3-70b-versatile
+2026-06-22 01:51:55 | INFO     | ai_analyst                | Gemini client initialized (fallback ready) | model=gemini-2.0-flash
+2026-06-22 01:51:56 | INFO     | ai_analyst                | LLM -> Signal: SELL | Confidence: 90%
+2026-06-22 01:51:57 | INFO     | ai_analyst                | Groq client initialized | model=llama-3.3-70b-versatile
+2026-06-22 01:51:58 | INFO     | ai_analyst                | Gemini client initialized (fallback ready) | model=gemini-2.0-flash
+2026-06-22 01:51:58 | INFO     | ai_analyst                | ============================================
+2026-06-22 01:51:58 | INFO     | ai_analyst                |    [SELL]  LLM ANALYST REPORT
+2026-06-22 01:51:58 | INFO     | ai_analyst                | ============================================
+2026-06-22 01:51:58 | INFO     | ai_analyst                |    Signal      : SELL
+2026-06-22 01:51:58 | INFO     | ai_analyst                |    Confidence  : 90%
+2026-06-22 01:51:58 | INFO     | ai_analyst                |    Analysis    : The EURUSD market is currently in a sideways trend on the 15M timeframe, with a 
+2026-06-22 01:51:58 | INFO     | ai_analyst                |    Reasoning   : The combination of the bearish engulfing pattern, rising wedge pattern, and bearish multi-timeframe 
+2026-06-22 01:51:58 | INFO     | ai_analyst                |    Key risk    : A break above the nearest resistance level of 1.14776 could invalidate the sell signal and indicate a potential trend reversal.
+2026-06-22 01:51:58 | INFO     | ai_analyst                |    Invalidation: 1.14776
+2026-06-22 01:51:58 | INFO     | ai_analyst                | ============================================
+2026-06-22 01:51:58 | INFO     | ai_analyst                | Groq client initialized | model=llama-3.3-70b-versatile
+2026-06-22 01:51:59 | INFO     | ai_analyst                | Gemini client initialized (fallback ready) | model=gemini-2.0-flash
+2026-06-22 01:51:59 | ERROR    | master_analyst            | [MasterAnalyst] LLM error: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CcGzGj97MkiqfhgAviu9j'}
+2026-06-22 01:51:59 | INFO     | analysis_agent            | [AnalysisAgent] -> NO TRADE (Session gate: NEW_YORK — TREND_CONTINUATION)
+2026-06-22 01:51:59 | INFO     | analysis_agent            | [AnalysisAgent] Complete — Session: NEW_YORK (19:51 GMT) | Strategy: TREND_CONTINUATION | Macro Regime: RISK_ON | Macro Score: 90 | Rule: STRONG_SELL | Master: STRONG_SELL | Final: NO TRADE
+2026-06-22 01:51:59 | INFO     | ai_trader                 | [4/9] Decision Agent...
+2026-06-22 01:51:59 | INFO     | decision_agent            | ============================================
+2026-06-22 01:51:59 | INFO     | decision_agent            |   ⚪  FINAL DECISION  (Day 42 + Day 53)
+2026-06-22 01:51:59 | INFO     | decision_agent            | ============================================
+2026-06-22 01:51:59 | INFO     | decision_agent            |   Decision    : NO TRADE
+2026-06-22 01:51:59 | INFO     | decision_agent            |   Confidence  : 0%
+2026-06-22 01:51:59 | INFO     | decision_agent            |   Pattern     : bearish_engulfing  (EURUSD 15m TRENDING)
+2026-06-22 01:51:59 | INFO     | decision_agent            |   -- Reasoning --
+2026-06-22 01:51:59 | INFO     | decision_agent            |     * Risk rejected: None
+2026-06-22 01:51:59 | INFO     | decision_agent            | ============================================
+2026-06-22 01:51:59 | INFO     | ai_trader                 | [5/9] Risk Engine...
+2026-06-22 01:51:59 | INFO     | risk_engine               | [RiskEngine] REJECTED — Signal is NO TRADE
+2026-06-22 01:51:59 | INFO     | risk_engine               | ════════════════════════════════════════════
+2026-06-22 01:51:59 | INFO     | risk_engine               |   ⛔  RISK ENGINE
+2026-06-22 01:51:59 | INFO     | risk_engine               | ════════════════════════════════════════════
+2026-06-22 01:51:59 | INFO     | risk_engine               |   Rejected    : Signal is NO TRADE
+2026-06-22 01:51:59 | INFO     | risk_engine               | ════════════════════════════════════════════
+2026-06-22 01:51:59 | INFO     | ai_trader                 | Daily PnL — Net: $0 | Loss: 0.0% | Limit left: 3.0%
+2026-06-22 01:51:59 | INFO     | ai_trader                 | [6/9] Safety Guard (Permission + Correlation)...
+2026-06-22 01:51:59 | INFO     | trade_permission          | [TradePermission] DENIED (2/5 checks passed)
+2026-06-22 01:51:59 | INFO     | trade_permission          | ════════════════════════════════════════════
+2026-06-22 01:51:59 | INFO     | trade_permission          |   ⛔  TRADE PERMISSION  (2/5)
+2026-06-22 01:51:59 | INFO     | trade_permission          | ════════════════════════════════════════════
+2026-06-22 01:51:59 | INFO     | trade_permission          |   ✗  Valid signal           NO TRADE
+2026-06-22 01:51:59 | INFO     | trade_permission          |   ✗  Risk approved          Signal is NO TRADE
+2026-06-22 01:51:59 | INFO     | trade_permission          |   ✓  News safe              News fetch failed — proceed with caution
+2026-06-22 01:51:59 | INFO     | trade_permission          |   ✗  Min confidence         0% (min 55%)
+2026-06-22 01:51:59 | INFO     | trade_permission          |   ✓  Session quality        HIGH
+2026-06-22 01:51:59 | INFO     | trade_permission          |   ──
+2026-06-22 01:51:59 | INFO     | trade_permission          |   Final action : NO TRADE
+2026-06-22 01:51:59 | INFO     | trade_permission          | ════════════════════════════════════════════
+2026-06-22 01:51:59 | INFO     | ai_trader                 | [7/9] Learning Agent...
+2026-06-22 01:51:59 | INFO     | learning_agent            | [LearningAgent] Decision #52 saved — NO TRADE
+2026-06-22 01:51:59 | INFO     | database.db               | Candles saved: EURUSD 15m | 300 rows
+2026-06-22 01:51:59 | INFO     | database.db               | Indicators saved: EURUSD 15m
+2026-06-22 01:51:59 | WARNING  | ai_trader                 | DB save error (non-critical): Object of type bool is not JSON serializable
+2026-06-22 01:51:59 | INFO     | ai_trader                 | [8/9] Approval Gate...
+2026-06-22 01:51:59 | INFO     | ai_trader                 | [9/9] Execution + Alerts...
+2026-06-22 01:51:59 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:51:59 | INFO     | ai_trader                 |   ⚪  AI TRADER FINAL REPORT — EURUSD
+2026-06-22 01:51:59 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:51:59 | INFO     | ai_trader                 |   Engine       : MT5_DEMO | Approval: AUTONOMOUS
+2026-06-22 01:51:59 | INFO     | ai_trader                 |   Price        : None  |  Session: New York
+2026-06-22 01:51:59 | INFO     | ai_trader                 |   Candle       : 2026-06-19T22:15:00
+2026-06-22 01:51:59 | INFO     | ai_trader                 |   Trend        : sideways  |  Regime: TRENDING
+2026-06-22 01:51:59 | INFO     | ai_trader                 |   RSI          : 41.98  |  Volatility: NORMAL
+2026-06-22 01:51:59 | INFO     | ai_trader                 |   Rule signal  : STRONG_SELL (100%)
+2026-06-22 01:51:59 | INFO     | ai_trader                 |   LLM signal   : SELL (90%)
+2026-06-22 01:51:59 | INFO     | ai_trader                 |   DECISION     : NO TRADE (0%)
+2026-06-22 01:51:59 | INFO     | ai_trader                 |   ──
+2026-06-22 01:51:59 | INFO     | ai_trader                 |   FINAL ACTION : NO TRADE — Signal is NO TRADE
+2026-06-22 01:51:59 | INFO     | ai_trader                 |   Memory       : 52 decisions | WR: N/A%
+2026-06-22 01:51:59 | INFO     | ai_trader                 |   Completed in : 16.6s
+2026-06-22 01:51:59 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:51:59 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:51:59 | INFO     | ai_trader                 |   AITrader Week3-Day21 — GBPUSD 15m
+2026-06-22 01:51:59 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:51:59 | INFO     | ai_trader                 | [1/9] Market Agent...
+2026-06-22 01:51:59 | INFO     | market_agent              | [MarketAgent] Running for GBPUSD 15m
+2026-06-22 01:51:59 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:51:59 | INFO     | analysis.timeframe        | MTF: Fetching GBPUSD 1d
+2026-06-22 01:51:59 | INFO     | data.fetcher              | Fetching GBPUSD | 1d | 200 candles...
+2026-06-22 01:52:00 | INFO     | data.fetcher              | [OK] Got 130 candles | Latest: 2026-06-21 00:00:00
+2026-06-22 01:52:00 | INFO     | analysis.timeframe        | MTF: 1d → trend=bearish rsi=31.44
+2026-06-22 01:52:00 | INFO     | analysis.timeframe        | MTF: Fetching GBPUSD 4h
+2026-06-22 01:52:00 | INFO     | data.fetcher              | Fetching GBPUSD | 4h | 200 candles...
+2026-06-22 01:52:00 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 20:00:00
+2026-06-22 01:52:00 | INFO     | analysis.timeframe        | MTF: 4h → trend=strong_bearish rsi=34.86
+2026-06-22 01:52:00 | INFO     | analysis.timeframe        | MTF: Fetching GBPUSD 1h
+2026-06-22 01:52:00 | INFO     | data.fetcher              | Fetching GBPUSD | 1h | 200 candles...
+2026-06-22 01:52:00 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:00:00
+2026-06-22 01:52:00 | INFO     | analysis.timeframe        | MTF: 1h → trend=sideways rsi=53.45
+2026-06-22 01:52:00 | INFO     | analysis.timeframe        | MTF: Fetching GBPUSD 15m
+2026-06-22 01:52:00 | INFO     | data.fetcher              | Fetching GBPUSD | 15m | 200 candles...
+2026-06-22 01:52:00 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:52:00 | INFO     | analysis.timeframe        | MTF: 15m → trend=bullish rsi=56.33
+2026-06-22 01:52:00 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:52:00 | INFO     | data.fetcher              | Fetching GBPUSD | 15m | 300 candles...
+2026-06-22 01:52:00 | INFO     | data.fetcher              | [OK] Got 300 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:52:00 | INFO     | data.validator            | Validating data: GBPUSD 15m | rows=300
+2026-06-22 01:52:00 | INFO     | data.validator            | Data validation passed
+2026-06-22 01:52:00 | INFO     | analysis.market_regime    | Regime: RANGING | Direction: BULLISH | Strength: WEAK | Volatility: NORMAL
+2026-06-22 01:52:00 | INFO     | market_agent              | [MarketAgent] Done — Price: 1.32371 | Trend: bullish | Regime: RANGING
+2026-06-22 01:52:00 | INFO     | ai_trader                 | [2/9] Circuit Breaker Gate...
+2026-06-22 01:52:01 | INFO     | ai_trader                 | [3/9] Analysis Agent...
+2026-06-22 01:52:01 | INFO     | analysis_agent            | [AnalysisAgent] Running Day 65 pipeline for GBPUSD (15m)
+2026-06-22 01:52:01 | INFO     | session_analyzer          | [SessionAnalyzer] NEW_YORK | GBPUSD | Strategy: TREND_CONTINUATION | Score: 16 | Trade: ❌
+2026-06-22 01:52:01 | INFO     | analysis.advanced_patterns | Advanced patterns detected: 12
+2026-06-22 01:52:01 | INFO     | analysis.advanced_patterns | Advanced patterns detected: 12
+2026-06-22 01:52:01 | INFO     | analysis.fibonacci        | FibonacciEngine ready | TF=15m | swing_window=7
+2026-06-22 01:52:01 | INFO     | analysis.fibonacci        | Fib Analysis | Swing: 1.31638→1.32538 | Trend: BEARISH | Position: 78.6% | Signal: WAIT
+2026-06-22 01:52:01 | INFO     | analysis.market_bias      | Bias: SELL | Confidence: 60% | Conflicts: 1
+2026-06-22 01:52:01 | INFO     | sentiment_data            | [SentimentData] Fetching all sentiment data for GBPUSD
+2026-06-22 01:52:01 | INFO     | sentiment_data            | [RetailData] GBPUSD | Approx Long: 51.2%
+2026-06-22 01:52:02 | INFO     | sentiment_data            | [F&G API] Value: 23.0 | Label: Extreme Fear
+2026-06-22 01:52:03 | INFO     | sentiment_data            | [CurrStr] Calculated: {'USD': 100.0, 'EUR': 50.5, 'GBP': 77.2, 'JPY': 65.3, 'AUD': 93.9, 'CAD': 58.0, 'CHF': 25.1, 'NZD': 0.0}
+2026-06-22 01:52:03 | INFO     | sentiment_data            | [DXY] Current: 100.850 | Change: +0.759% | Trend: BULLISH
+2026-06-22 01:52:03 | INFO     | sentiment_data            | [SentimentData] GBPUSD | Retail Long: 51.2% | F&G: 23.0 | DXY: BULLISH
+2026-06-22 01:52:03 | INFO     | sentiment_engine          | [Retail] GBPUSD | Long: 51.2% | Bias: NEUTRAL | Score: +0
+2026-06-22 01:52:03 | INFO     | sentiment_engine          | [F&G] Value: 23.0 | Label: EXTREME_FEAR | Score: +20
+2026-06-22 01:52:03 | INFO     | sentiment_engine          | [CurrStr] GBPUSD | GBP: 77.2 vs USD: 100.0 | Bias: STRONG_BEARISH | Score: -11
+2026-06-22 01:52:03 | INFO     | sentiment_engine          | [DXY] Trend: BULLISH | Change: +0.76% | Impact: STRONG | Score: +20
+2026-06-22 01:52:03 | INFO     | sentiment_engine          | [SentimentEngine] GBPUSD | Score: -11 | Bias: BEARISH | Conf: 61%
+2026-06-22 01:52:03 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:52:03 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:52:03 | INFO     | data.fetcher              | Fetching GBPUSD | 4h | 150 candles...
+2026-06-22 01:52:03 | INFO     | data.fetcher              | [OK] Got 150 candles | Latest: 2026-06-19 20:00:00
+2026-06-22 01:52:03 | INFO     | data.fetcher              | Fetching GBPUSD | 15m | 150 candles...
+2026-06-22 01:52:03 | INFO     | data.fetcher              | [OK] Got 150 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:52:03 | INFO     | order_block               | [OrderBlock] Detected 4 order blocks
+2026-06-22 01:52:03 | INFO     | fvg_detector              | [FVG] Detected 25 fair value gaps
+2026-06-22 01:52:04 | INFO     | smc_engine                | [SMCEngine] GBPUSD | Signal: WAIT | Direction: NEUTRAL | Score: 0/100 | Grade: INVALID
+2026-06-22 01:52:04 | INFO     | smc_engine                | ════════════════════════════════════════════════════════
+2026-06-22 01:52:04 | INFO     | smc_engine                |   🧠  SMC ENGINE  (Day 44)
+2026-06-22 01:52:04 | INFO     | smc_engine                | ════════════════════════════════════════════════════════
+2026-06-22 01:52:04 | INFO     | smc_engine                |   Pair         : GBPUSD
+2026-06-22 01:52:04 | INFO     | smc_engine                |   Signal       : 🟡 WAIT
+2026-06-22 01:52:04 | INFO     | smc_engine                |   Direction    : NEUTRAL
+2026-06-22 01:52:04 | INFO     | smc_engine                |   Score        : 0/100
+2026-06-22 01:52:04 | INFO     | smc_engine                |   Grade        : INVALID
+2026-06-22 01:52:04 | INFO     | smc_engine                | 
+2026-06-22 01:52:04 | INFO     | smc_engine                |   ❌ liquidity_sweep        (+20)
+2026-06-22 01:52:04 | INFO     | smc_engine                |   ❌ order_block            (+25)
+2026-06-22 01:52:04 | INFO     | smc_engine                |   ❌ fvg                    (+15)
+2026-06-22 01:52:04 | INFO     | smc_engine                |   ❌ bos                    (+25)
+2026-06-22 01:52:04 | INFO     | smc_engine                |   ❌ confirmation_candle    (+15)
+2026-06-22 01:52:04 | INFO     | smc_engine                | 
+2026-06-22 01:52:04 | INFO     | smc_engine                |   Analysis     : No significant SMC confluence found — no clear institutional footprint.
+2026-06-22 01:52:04 | INFO     | smc_engine                | ════════════════════════════════════════════════════════
+2026-06-22 01:52:04 | INFO     | session_analyzer          | [SessionAnalyzer] NEW_YORK | GBPUSD | Strategy: TREND_CONTINUATION | Score: 25 | Trade: ❌
+2026-06-22 01:52:04 | INFO     | macro_data                | [MacroData] DXY=BULLISH Gold=BEARISH VIX=BEARISH SP500=BULLISH
+2026-06-22 01:52:06 | INFO     | correlation_engine        | [CorrelationEngine] GBPUSD correlation matrix: {'GBPUSD_DXY': -0.3, 'GBPUSD_GOLD': 0.34, 'GBPUSD_OIL': -0.03, 'GBPUSD_US10Y': 0.25, 'GBPUSD_SP500': -0.22, 'GBPUSD_VIX': 0.27}
+2026-06-22 01:52:06 | INFO     | risk_sentiment            | [RiskSentiment] RISK_ON (conf 75%) | VIX=16.4 (NORMAL) | Mode=NORMAL
+2026-06-22 01:52:06 | INFO     | intermarket_engine        | [IntermarketEngine] GBPUSD | Regime: RISK_ON | Macro Score: 90/100 | Pair Bias: NEUTRAL
+2026-06-22 01:52:06 | INFO     | news_filter               | Checking news for: {'GBP', 'USD'}
+2026-06-22 01:52:06 | WARNING  | news_filter               | Forex Factory fetch failed: 403 Client Error: Forbidden for url: https://www.forexfactory.com/calendar
+2026-06-22 01:52:06 | WARNING  | news_filter               | Could not fetch live news — using safe fallback
+2026-06-22 01:52:06 | INFO     | news_filter               | ════════════════════════════════════════════
+2026-06-22 01:52:06 | INFO     | news_filter               |   ✅  NEWS FILTER  (Day 43)
+2026-06-22 01:52:06 | INFO     | news_filter               | ════════════════════════════════════════════
+2026-06-22 01:52:06 | INFO     | news_filter               |   Trade allowed : True
+2026-06-22 01:52:06 | INFO     | news_filter               |   Reason        : News fetch failed — proceed with caution
+2026-06-22 01:52:06 | INFO     | news_filter               |   Risk level    : LOW
+2026-06-22 01:52:06 | INFO     | news_filter               | ════════════════════════════════════════════
+2026-06-22 01:52:06 | INFO     | ai_analyst                | Groq client initialized | model=llama-3.3-70b-versatile
+2026-06-22 01:52:07 | INFO     | ai_analyst                | Gemini client initialized (fallback ready) | model=gemini-2.0-flash
+2026-06-22 01:52:09 | INFO     | ai_analyst                | LLM -> Signal: SELL | Confidence: 70%
+2026-06-22 01:52:09 | INFO     | ai_analyst                | Groq client initialized | model=llama-3.3-70b-versatile
+2026-06-22 01:52:10 | INFO     | ai_analyst                | Gemini client initialized (fallback ready) | model=gemini-2.0-flash
+2026-06-22 01:52:10 | INFO     | ai_analyst                | ============================================
+2026-06-22 01:52:10 | INFO     | ai_analyst                |    [SELL]  LLM ANALYST REPORT
+2026-06-22 01:52:10 | INFO     | ai_analyst                | ============================================
+2026-06-22 01:52:10 | INFO     | ai_analyst                |    Signal      : SELL
+2026-06-22 01:52:10 | INFO     | ai_analyst                |    Confidence  : 70%
+2026-06-22 01:52:10 | INFO     | ai_analyst                |    Analysis    : The GBPUSD market is currently ranging with a bullish direction, but the recent 
+2026-06-22 01:52:10 | INFO     | ai_analyst                |    Reasoning   : The sell signal is confirmed by the advanced pattern analysis, which shows a rising wedge with a bea
+2026-06-22 01:52:10 | INFO     | ai_analyst                |    Key risk    : The key risk for this trade is a strong bullish breakout above the recent resistance level, which could invalidate the sell signal and lead to a significant loss.
+2026-06-22 01:52:10 | INFO     | ai_analyst                |    Invalidation: 1.32413
+2026-06-22 01:52:10 | INFO     | ai_analyst                | ============================================
+2026-06-22 01:52:11 | INFO     | ai_analyst                | Groq client initialized | model=llama-3.3-70b-versatile
+2026-06-22 01:52:12 | INFO     | ai_analyst                | Gemini client initialized (fallback ready) | model=gemini-2.0-flash
+2026-06-22 01:52:12 | ERROR    | master_analyst            | [MasterAnalyst] LLM error: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CcGzHhjZSFEhCQ2DMm6AW'}
+2026-06-22 01:52:12 | INFO     | analysis_agent            | [AnalysisAgent] -> NO TRADE (Session gate: NEW_YORK — TREND_CONTINUATION)
+2026-06-22 01:52:12 | INFO     | analysis_agent            | [AnalysisAgent] Complete — Session: NEW_YORK (19:52 GMT) | Strategy: TREND_CONTINUATION | Macro Regime: RISK_ON | Macro Score: 90 | Rule: STRONG_SELL | Master: STRONG_SELL | Final: NO TRADE
+2026-06-22 01:52:12 | INFO     | ai_trader                 | [4/9] Decision Agent...
+2026-06-22 01:52:12 | INFO     | decision_agent            | ============================================
+2026-06-22 01:52:12 | INFO     | decision_agent            |   ⚪  FINAL DECISION  (Day 42 + Day 53)
+2026-06-22 01:52:12 | INFO     | decision_agent            | ============================================
+2026-06-22 01:52:12 | INFO     | decision_agent            |   Decision    : NO TRADE
+2026-06-22 01:52:12 | INFO     | decision_agent            |   Confidence  : 0%
+2026-06-22 01:52:12 | INFO     | decision_agent            |   Pattern     : none  (GBPUSD 15m RANGING)
+2026-06-22 01:52:12 | INFO     | decision_agent            |   -- Reasoning --
+2026-06-22 01:52:12 | INFO     | decision_agent            |     * Risk rejected: None
+2026-06-22 01:52:12 | INFO     | decision_agent            | ============================================
+2026-06-22 01:52:12 | INFO     | ai_trader                 | [5/9] Risk Engine...
+2026-06-22 01:52:12 | INFO     | risk_engine               | [RiskEngine] REJECTED — Signal is NO TRADE
+2026-06-22 01:52:12 | INFO     | risk_engine               | ════════════════════════════════════════════
+2026-06-22 01:52:12 | INFO     | risk_engine               |   ⛔  RISK ENGINE
+2026-06-22 01:52:12 | INFO     | risk_engine               | ════════════════════════════════════════════
+2026-06-22 01:52:12 | INFO     | risk_engine               |   Rejected    : Signal is NO TRADE
+2026-06-22 01:52:12 | INFO     | risk_engine               | ════════════════════════════════════════════
+2026-06-22 01:52:12 | INFO     | ai_trader                 | Daily PnL — Net: $0 | Loss: 0.0% | Limit left: 3.0%
+2026-06-22 01:52:12 | INFO     | ai_trader                 | [6/9] Safety Guard (Permission + Correlation)...
+2026-06-22 01:52:12 | INFO     | trade_permission          | [TradePermission] DENIED (2/5 checks passed)
+2026-06-22 01:52:12 | INFO     | trade_permission          | ════════════════════════════════════════════
+2026-06-22 01:52:12 | INFO     | trade_permission          |   ⛔  TRADE PERMISSION  (2/5)
+2026-06-22 01:52:12 | INFO     | trade_permission          | ════════════════════════════════════════════
+2026-06-22 01:52:12 | INFO     | trade_permission          |   ✗  Valid signal           NO TRADE
+2026-06-22 01:52:12 | INFO     | trade_permission          |   ✗  Risk approved          Signal is NO TRADE
+2026-06-22 01:52:12 | INFO     | trade_permission          |   ✓  News safe              News fetch failed — proceed with caution
+2026-06-22 01:52:12 | INFO     | trade_permission          |   ✗  Min confidence         0% (min 55%)
+2026-06-22 01:52:12 | INFO     | trade_permission          |   ✓  Session quality        HIGH
+2026-06-22 01:52:12 | INFO     | trade_permission          |   ──
+2026-06-22 01:52:12 | INFO     | trade_permission          |   Final action : NO TRADE
+2026-06-22 01:52:12 | INFO     | trade_permission          | ════════════════════════════════════════════
+2026-06-22 01:52:12 | INFO     | ai_trader                 | [7/9] Learning Agent...
+2026-06-22 01:52:12 | INFO     | learning_agent            | [LearningAgent] Decision #53 saved — NO TRADE
+2026-06-22 01:52:12 | INFO     | database.db               | Candles saved: GBPUSD 15m | 300 rows
+2026-06-22 01:52:12 | INFO     | database.db               | Indicators saved: GBPUSD 15m
+2026-06-22 01:52:12 | WARNING  | ai_trader                 | DB save error (non-critical): Object of type bool is not JSON serializable
+2026-06-22 01:52:12 | INFO     | ai_trader                 | [8/9] Approval Gate...
+2026-06-22 01:52:12 | INFO     | ai_trader                 | [9/9] Execution + Alerts...
+2026-06-22 01:52:12 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:52:12 | INFO     | ai_trader                 |   ⚪  AI TRADER FINAL REPORT — GBPUSD
+2026-06-22 01:52:12 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:52:12 | INFO     | ai_trader                 |   Engine       : MT5_DEMO | Approval: AUTONOMOUS
+2026-06-22 01:52:12 | INFO     | ai_trader                 |   Price        : None  |  Session: New York
+2026-06-22 01:52:12 | INFO     | ai_trader                 |   Candle       : 2026-06-19T22:15:00
+2026-06-22 01:52:12 | INFO     | ai_trader                 |   Trend        : bullish  |  Regime: RANGING
+2026-06-22 01:52:12 | INFO     | ai_trader                 |   RSI          : 56.33  |  Volatility: NORMAL
+2026-06-22 01:52:12 | INFO     | ai_trader                 |   Rule signal  : STRONG_SELL (63%)
+2026-06-22 01:52:12 | INFO     | ai_trader                 |   LLM signal   : SELL (70%)
+2026-06-22 01:52:12 | INFO     | ai_trader                 |   DECISION     : NO TRADE (0%)
+2026-06-22 01:52:12 | INFO     | ai_trader                 |   ──
+2026-06-22 01:52:12 | INFO     | ai_trader                 |   FINAL ACTION : NO TRADE — Signal is NO TRADE
+2026-06-22 01:52:12 | INFO     | ai_trader                 |   Memory       : 53 decisions | WR: N/A%
+2026-06-22 01:52:12 | INFO     | ai_trader                 |   Completed in : 12.9s
+2026-06-22 01:52:12 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:52:12 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:52:12 | INFO     | ai_trader                 |   AITrader Week3-Day21 — USDJPY 15m
+2026-06-22 01:52:12 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:52:12 | INFO     | ai_trader                 | [1/9] Market Agent...
+2026-06-22 01:52:12 | INFO     | market_agent              | [MarketAgent] Running for USDJPY 15m
+2026-06-22 01:52:12 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:52:12 | INFO     | analysis.timeframe        | MTF: Fetching USDJPY 1d
+2026-06-22 01:52:12 | INFO     | data.fetcher              | Fetching USDJPY | 1d | 200 candles...
+2026-06-22 01:52:13 | INFO     | data.fetcher              | [OK] Got 130 candles | Latest: 2026-06-21 00:00:00
+2026-06-22 01:52:13 | INFO     | analysis.timeframe        | MTF: 1d → trend=bullish rsi=69.78
+2026-06-22 01:52:13 | INFO     | analysis.timeframe        | MTF: Fetching USDJPY 4h
+2026-06-22 01:52:13 | INFO     | data.fetcher              | Fetching USDJPY | 4h | 200 candles...
+2026-06-22 01:52:13 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 20:00:00
+2026-06-22 01:52:13 | INFO     | analysis.timeframe        | MTF: 4h → trend=strong_bullish rsi=64.74
+2026-06-22 01:52:13 | INFO     | analysis.timeframe        | MTF: Fetching USDJPY 1h
+2026-06-22 01:52:13 | INFO     | data.fetcher              | Fetching USDJPY | 1h | 200 candles...
+2026-06-22 01:52:13 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:00:00
+2026-06-22 01:52:13 | INFO     | analysis.timeframe        | MTF: 1h → trend=strong_bullish rsi=54.21
+2026-06-22 01:52:13 | INFO     | analysis.timeframe        | MTF: Fetching USDJPY 15m
+2026-06-22 01:52:13 | INFO     | data.fetcher              | Fetching USDJPY | 15m | 200 candles...
+2026-06-22 01:52:13 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:52:13 | INFO     | analysis.timeframe        | MTF: 15m → trend=strong_bullish rsi=51.18
+2026-06-22 01:52:13 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:52:13 | INFO     | data.fetcher              | Fetching USDJPY | 15m | 300 candles...
+2026-06-22 01:52:14 | INFO     | data.fetcher              | [OK] Got 300 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:52:14 | INFO     | data.validator            | Validating data: USDJPY 15m | rows=300
+2026-06-22 01:52:14 | INFO     | data.validator            | Data validation passed
+2026-06-22 01:52:14 | INFO     | analysis.market_regime    | Regime: TRENDING | Direction: BULLISH | Strength: MODERATE | Volatility: NORMAL
+2026-06-22 01:52:14 | INFO     | market_agent              | [MarketAgent] Done — Price: 161.28 | Trend: strong_bullish | Regime: TRENDING
+2026-06-22 01:52:14 | INFO     | ai_trader                 | [2/9] Circuit Breaker Gate...
+2026-06-22 01:52:14 | INFO     | ai_trader                 | [3/9] Analysis Agent...
+2026-06-22 01:52:14 | INFO     | analysis_agent            | [AnalysisAgent] Running Day 65 pipeline for USDJPY (15m)
+2026-06-22 01:52:14 | INFO     | session_analyzer          | [SessionAnalyzer] NEW_YORK | USDJPY | Strategy: TREND_CONTINUATION | Score: 17 | Trade: ❌
+2026-06-22 01:52:14 | INFO     | analysis.advanced_patterns | Advanced patterns detected: 13
+2026-06-22 01:52:14 | INFO     | analysis.advanced_patterns | False pattern filtered: DESCENDING_TRIANGLE — Bearish pattern against strong bullish trend
+2026-06-22 01:52:14 | INFO     | analysis.advanced_patterns | False pattern filtered: DOUBLE_TOP — Bearish pattern against strong bullish trend
+2026-06-22 01:52:14 | INFO     | analysis.advanced_patterns | False pattern filtered: DOUBLE_TOP — Confidence 50% too low
+2026-06-22 01:52:14 | INFO     | analysis.advanced_patterns | False pattern filtered: DOUBLE_TOP — Confidence 48% too low
+2026-06-22 01:52:14 | INFO     | analysis.advanced_patterns | False pattern filtered: DOUBLE_TOP — Confidence 45% too low
+2026-06-22 01:52:14 | INFO     | analysis.advanced_patterns | Advanced patterns detected: 13
+2026-06-22 01:52:14 | INFO     | analysis.advanced_patterns | False pattern filtered: DESCENDING_TRIANGLE — Bearish pattern against strong bullish trend
+2026-06-22 01:52:14 | INFO     | analysis.advanced_patterns | False pattern filtered: DOUBLE_TOP — Bearish pattern against strong bullish trend
+2026-06-22 01:52:14 | INFO     | analysis.advanced_patterns | False pattern filtered: DOUBLE_TOP — Confidence 50% too low
+2026-06-22 01:52:14 | INFO     | analysis.advanced_patterns | False pattern filtered: DOUBLE_TOP — Confidence 48% too low
+2026-06-22 01:52:14 | INFO     | analysis.advanced_patterns | False pattern filtered: DOUBLE_TOP — Confidence 45% too low
+2026-06-22 01:52:14 | INFO     | analysis.fibonacci        | FibonacciEngine ready | TF=15m | swing_window=7
+2026-06-22 01:52:14 | INFO     | analysis.fibonacci        | Fib Analysis | Swing: 160.46500→161.80901 | Trend: BULLISH | Position: 38.2% | Signal: BUY
+2026-06-22 01:52:14 | INFO     | analysis.market_bias      | Bias: STRONG_BUY | Confidence: 71% | Conflicts: 0
+2026-06-22 01:52:14 | INFO     | sentiment_data            | [SentimentData] Fetching all sentiment data for USDJPY
+2026-06-22 01:52:14 | INFO     | sentiment_data            | [RetailData] USDJPY | Approx Long: 50.1%
+2026-06-22 01:52:15 | INFO     | sentiment_data            | [F&G API] Value: 23.0 | Label: Extreme Fear
+2026-06-22 01:52:16 | INFO     | sentiment_data            | [CurrStr] Calculated: {'USD': 100.0, 'EUR': 50.5, 'GBP': 77.2, 'JPY': 65.3, 'AUD': 93.9, 'CAD': 58.0, 'CHF': 25.1, 'NZD': 0.0}
+2026-06-22 01:52:16 | INFO     | sentiment_data            | [DXY] Current: 100.850 | Change: +0.759% | Trend: BULLISH
+2026-06-22 01:52:16 | INFO     | sentiment_data            | [SentimentData] USDJPY | Retail Long: 50.1% | F&G: 23.0 | DXY: BULLISH
+2026-06-22 01:52:16 | INFO     | sentiment_engine          | [Retail] USDJPY | Long: 50.1% | Bias: NEUTRAL | Score: +0
+2026-06-22 01:52:16 | INFO     | sentiment_engine          | [F&G] Value: 23.0 | Label: EXTREME_FEAR | Score: +20
+2026-06-22 01:52:16 | INFO     | sentiment_engine          | [CurrStr] USDJPY | USD: 100.0 vs JPY: 65.3 | Bias: STRONG_BULLISH | Score: +17
+2026-06-22 01:52:16 | INFO     | sentiment_engine          | [DXY] Trend: BULLISH | Change: +0.76% | Impact: STRONG | Score: +20
+2026-06-22 01:52:16 | INFO     | sentiment_engine          | [SentimentEngine] USDJPY | Score: +57 | Bias: STRONG_BULLISH | Conf: 95%
+2026-06-22 01:52:16 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:52:16 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:52:16 | INFO     | data.fetcher              | Fetching USDJPY | 4h | 150 candles...
+2026-06-22 01:52:16 | INFO     | data.fetcher              | [OK] Got 150 candles | Latest: 2026-06-19 20:00:00
+2026-06-22 01:52:16 | INFO     | data.fetcher              | Fetching USDJPY | 15m | 150 candles...
+2026-06-22 01:52:17 | INFO     | data.fetcher              | [OK] Got 150 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:52:17 | INFO     | order_block               | [OrderBlock] Detected 2 order blocks
+2026-06-22 01:52:17 | INFO     | fvg_detector              | [FVG] Detected 15 fair value gaps
+2026-06-22 01:52:17 | INFO     | smc_engine                | [SMCEngine] USDJPY | Signal: WAIT | Direction: NEUTRAL | Score: 0/100 | Grade: INVALID
+2026-06-22 01:52:17 | INFO     | smc_engine                | ════════════════════════════════════════════════════════
+2026-06-22 01:52:17 | INFO     | smc_engine                |   🧠  SMC ENGINE  (Day 44)
+2026-06-22 01:52:17 | INFO     | smc_engine                | ════════════════════════════════════════════════════════
+2026-06-22 01:52:17 | INFO     | smc_engine                |   Pair         : USDJPY
+2026-06-22 01:52:17 | INFO     | smc_engine                |   Signal       : 🟡 WAIT
+2026-06-22 01:52:17 | INFO     | smc_engine                |   Direction    : NEUTRAL
+2026-06-22 01:52:17 | INFO     | smc_engine                |   Score        : 0/100
+2026-06-22 01:52:17 | INFO     | smc_engine                |   Grade        : INVALID
+2026-06-22 01:52:17 | INFO     | smc_engine                | 
+2026-06-22 01:52:17 | INFO     | smc_engine                |   ❌ liquidity_sweep        (+20)
+2026-06-22 01:52:17 | INFO     | smc_engine                |   ❌ order_block            (+25)
+2026-06-22 01:52:17 | INFO     | smc_engine                |   ❌ fvg                    (+15)
+2026-06-22 01:52:17 | INFO     | smc_engine                |   ❌ bos                    (+25)
+2026-06-22 01:52:17 | INFO     | smc_engine                |   ❌ confirmation_candle    (+15)
+2026-06-22 01:52:17 | INFO     | smc_engine                | 
+2026-06-22 01:52:17 | INFO     | smc_engine                |   Analysis     : No significant SMC confluence found — no clear institutional footprint.
+2026-06-22 01:52:17 | INFO     | smc_engine                | ════════════════════════════════════════════════════════
+2026-06-22 01:52:17 | INFO     | session_analyzer          | [SessionAnalyzer] NEW_YORK | USDJPY | Strategy: TREND_CONTINUATION | Score: 29 | Trade: ❌
+2026-06-22 01:52:17 | INFO     | macro_data                | [MacroData] DXY=BULLISH Gold=BEARISH VIX=BEARISH SP500=BULLISH
+2026-06-22 01:52:19 | INFO     | correlation_engine        | [CorrelationEngine] USDJPY correlation matrix: {'USDJPY_DXY': 0.25, 'USDJPY_GOLD': -0.42, 'USDJPY_OIL': 0.34, 'USDJPY_US10Y': -0.13, 'USDJPY_SP500': -0.17, 'USDJPY_VIX': 0.05}
+2026-06-22 01:52:19 | INFO     | risk_sentiment            | [RiskSentiment] RISK_ON (conf 75%) | VIX=16.4 (NORMAL) | Mode=NORMAL
+2026-06-22 01:52:19 | INFO     | intermarket_engine        | [IntermarketEngine] USDJPY | Regime: RISK_ON | Macro Score: 90/100 | Pair Bias: BUY
+2026-06-22 01:52:19 | INFO     | news_filter               | Checking news for: {'JPY', 'USD'}
+2026-06-22 01:52:19 | WARNING  | news_filter               | Forex Factory fetch failed: 403 Client Error: Forbidden for url: https://www.forexfactory.com/calendar
+2026-06-22 01:52:19 | WARNING  | news_filter               | Could not fetch live news — using safe fallback
+2026-06-22 01:52:19 | INFO     | news_filter               | ════════════════════════════════════════════
+2026-06-22 01:52:19 | INFO     | news_filter               |   ✅  NEWS FILTER  (Day 43)
+2026-06-22 01:52:19 | INFO     | news_filter               | ════════════════════════════════════════════
+2026-06-22 01:52:19 | INFO     | news_filter               |   Trade allowed : True
+2026-06-22 01:52:19 | INFO     | news_filter               |   Reason        : News fetch failed — proceed with caution
+2026-06-22 01:52:19 | INFO     | news_filter               |   Risk level    : LOW
+2026-06-22 01:52:19 | INFO     | news_filter               | ════════════════════════════════════════════
+2026-06-22 01:52:19 | INFO     | ai_analyst                | Groq client initialized | model=llama-3.3-70b-versatile
+2026-06-22 01:52:20 | INFO     | ai_analyst                | Gemini client initialized (fallback ready) | model=gemini-2.0-flash
+2026-06-22 01:52:22 | INFO     | ai_analyst                | LLM -> Signal: BUY | Confidence: 85%
+2026-06-22 01:52:22 | INFO     | ai_analyst                | Groq client initialized | model=llama-3.3-70b-versatile
+2026-06-22 01:52:23 | INFO     | ai_analyst                | Gemini client initialized (fallback ready) | model=gemini-2.0-flash
+2026-06-22 01:52:23 | INFO     | ai_analyst                | ============================================
+2026-06-22 01:52:23 | INFO     | ai_analyst                |    [BUY]  LLM ANALYST REPORT
+2026-06-22 01:52:23 | INFO     | ai_analyst                | ============================================
+2026-06-22 01:52:23 | INFO     | ai_analyst                |    Signal      : BUY
+2026-06-22 01:52:23 | INFO     | ai_analyst                |    Confidence  : 85%
+2026-06-22 01:52:23 | INFO     | ai_analyst                |    Analysis    : The USDJPY market is currently in a strong bullish trend, with multiple indicato
+2026-06-22 01:52:23 | INFO     | ai_analyst                |    Reasoning   : The combination of the strong bullish trend, falling wedge pattern, and bullish multi-timeframe bias
+2026-06-22 01:52:23 | INFO     | ai_analyst                |    Key risk    : A break of the recent support level at 161.233 could invalidate this trade and lead to a reversal of the trend.
+2026-06-22 01:52:23 | INFO     | ai_analyst                |    Invalidation: A close below 161.233
+2026-06-22 01:52:23 | INFO     | ai_analyst                | ============================================
+2026-06-22 01:52:23 | INFO     | ai_analyst                | Groq client initialized | model=llama-3.3-70b-versatile
+2026-06-22 01:52:24 | INFO     | ai_analyst                | Gemini client initialized (fallback ready) | model=gemini-2.0-flash
+2026-06-22 01:52:24 | ERROR    | master_analyst            | [MasterAnalyst] LLM error: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CcGzJaCQYLYob1oaz5WmH'}
+2026-06-22 01:52:24 | INFO     | analysis_agent            | [AnalysisAgent] -> NO TRADE (Session gate: NEW_YORK — TREND_CONTINUATION)
+2026-06-22 01:52:24 | INFO     | analysis_agent            | [AnalysisAgent] Complete — Session: NEW_YORK (19:52 GMT) | Strategy: TREND_CONTINUATION | Macro Regime: RISK_ON | Macro Score: 90 | Rule: STRONG_BUY | Master: STRONG_BUY | Final: NO TRADE
+2026-06-22 01:52:24 | INFO     | ai_trader                 | [4/9] Decision Agent...
+2026-06-22 01:52:24 | INFO     | decision_agent            | ============================================
+2026-06-22 01:52:24 | INFO     | decision_agent            |   ⚪  FINAL DECISION  (Day 42 + Day 53)
+2026-06-22 01:52:24 | INFO     | decision_agent            | ============================================
+2026-06-22 01:52:24 | INFO     | decision_agent            |   Decision    : NO TRADE
+2026-06-22 01:52:24 | INFO     | decision_agent            |   Confidence  : 0%
+2026-06-22 01:52:24 | INFO     | decision_agent            |   Pattern     : bearish_engulfing  (USDJPY 15m TRENDING)
+2026-06-22 01:52:24 | INFO     | decision_agent            |   -- Reasoning --
+2026-06-22 01:52:24 | INFO     | decision_agent            |     * Risk rejected: None
+2026-06-22 01:52:24 | INFO     | decision_agent            | ============================================
+2026-06-22 01:52:24 | INFO     | ai_trader                 | [5/9] Risk Engine...
+2026-06-22 01:52:24 | INFO     | risk_engine               | [RiskEngine] REJECTED — Signal is NO TRADE
+2026-06-22 01:52:24 | INFO     | risk_engine               | ════════════════════════════════════════════
+2026-06-22 01:52:24 | INFO     | risk_engine               |   ⛔  RISK ENGINE
+2026-06-22 01:52:24 | INFO     | risk_engine               | ════════════════════════════════════════════
+2026-06-22 01:52:24 | INFO     | risk_engine               |   Rejected    : Signal is NO TRADE
+2026-06-22 01:52:24 | INFO     | risk_engine               | ════════════════════════════════════════════
+2026-06-22 01:52:24 | INFO     | ai_trader                 | Daily PnL — Net: $0 | Loss: 0.0% | Limit left: 3.0%
+2026-06-22 01:52:24 | INFO     | ai_trader                 | [6/9] Safety Guard (Permission + Correlation)...
+2026-06-22 01:52:24 | INFO     | trade_permission          | [TradePermission] DENIED (2/5 checks passed)
+2026-06-22 01:52:24 | INFO     | trade_permission          | ════════════════════════════════════════════
+2026-06-22 01:52:24 | INFO     | trade_permission          |   ⛔  TRADE PERMISSION  (2/5)
+2026-06-22 01:52:24 | INFO     | trade_permission          | ════════════════════════════════════════════
+2026-06-22 01:52:24 | INFO     | trade_permission          |   ✗  Valid signal           NO TRADE
+2026-06-22 01:52:24 | INFO     | trade_permission          |   ✗  Risk approved          Signal is NO TRADE
+2026-06-22 01:52:24 | INFO     | trade_permission          |   ✓  News safe              News fetch failed — proceed with caution
+2026-06-22 01:52:24 | INFO     | trade_permission          |   ✗  Min confidence         0% (min 55%)
+2026-06-22 01:52:24 | INFO     | trade_permission          |   ✓  Session quality        HIGH
+2026-06-22 01:52:24 | INFO     | trade_permission          |   ──
+2026-06-22 01:52:24 | INFO     | trade_permission          |   Final action : NO TRADE
+2026-06-22 01:52:24 | INFO     | trade_permission          | ════════════════════════════════════════════
+2026-06-22 01:52:24 | INFO     | ai_trader                 | [7/9] Learning Agent...
+2026-06-22 01:52:24 | INFO     | learning_agent            | [LearningAgent] Decision #54 saved — NO TRADE
+2026-06-22 01:52:24 | INFO     | database.db               | Candles saved: USDJPY 15m | 300 rows
+2026-06-22 01:52:24 | INFO     | database.db               | Indicators saved: USDJPY 15m
+2026-06-22 01:52:24 | WARNING  | ai_trader                 | DB save error (non-critical): Object of type bool is not JSON serializable
+2026-06-22 01:52:24 | INFO     | ai_trader                 | [8/9] Approval Gate...
+2026-06-22 01:52:24 | INFO     | ai_trader                 | [9/9] Execution + Alerts...
+2026-06-22 01:52:24 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:52:24 | INFO     | ai_trader                 |   ⚪  AI TRADER FINAL REPORT — USDJPY
+2026-06-22 01:52:24 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:52:24 | INFO     | ai_trader                 |   Engine       : MT5_DEMO | Approval: AUTONOMOUS
+2026-06-22 01:52:24 | INFO     | ai_trader                 |   Price        : None  |  Session: New York
+2026-06-22 01:52:24 | INFO     | ai_trader                 |   Candle       : 2026-06-19T22:15:00
+2026-06-22 01:52:24 | INFO     | ai_trader                 |   Trend        : strong_bullish  |  Regime: TRENDING
+2026-06-22 01:52:24 | INFO     | ai_trader                 |   RSI          : 51.18  |  Volatility: NORMAL
+2026-06-22 01:52:24 | INFO     | ai_trader                 |   Rule signal  : STRONG_BUY (83%)
+2026-06-22 01:52:24 | INFO     | ai_trader                 |   LLM signal   : BUY (85%)
+2026-06-22 01:52:24 | INFO     | ai_trader                 |   DECISION     : NO TRADE (0%)
+2026-06-22 01:52:24 | INFO     | ai_trader                 |   ──
+2026-06-22 01:52:24 | INFO     | ai_trader                 |   FINAL ACTION : NO TRADE — Signal is NO TRADE
+2026-06-22 01:52:24 | INFO     | ai_trader                 |   Memory       : 54 decisions | WR: N/A%
+2026-06-22 01:52:24 | INFO     | ai_trader                 |   Completed in : 11.9s
+2026-06-22 01:52:24 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:52:43 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:52:43 | INFO     | ai_trader                 |   AITrader Week3-Day21 — EURUSD 15m
+2026-06-22 01:52:43 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:52:43 | INFO     | ai_trader                 | [1/9] Market Agent...
+2026-06-22 01:52:43 | INFO     | market_agent              | [MarketAgent] Running for EURUSD 15m
+2026-06-22 01:52:43 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:52:43 | INFO     | analysis.timeframe        | MTF: Fetching EURUSD 1d
+2026-06-22 01:52:43 | INFO     | data.fetcher              | Fetching EURUSD | 1d | 200 candles...
+2026-06-22 01:52:43 | INFO     | data.fetcher              | [OK] Got 129 candles | Latest: 2026-06-19 00:00:00
+2026-06-22 01:52:43 | INFO     | analysis.timeframe        | MTF: 1d → trend=bearish rsi=32.62
+2026-06-22 01:52:43 | INFO     | analysis.timeframe        | MTF: Fetching EURUSD 4h
+2026-06-22 01:52:43 | INFO     | data.fetcher              | Fetching EURUSD | 4h | 200 candles...
+2026-06-22 01:52:43 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 20:00:00
+2026-06-22 01:52:43 | INFO     | analysis.timeframe        | MTF: 4h → trend=strong_bearish rsi=36.25
+2026-06-22 01:52:43 | INFO     | analysis.timeframe        | MTF: Fetching EURUSD 1h
+2026-06-22 01:52:43 | INFO     | data.fetcher              | Fetching EURUSD | 1h | 200 candles...
+2026-06-22 01:52:43 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:00:00
+2026-06-22 01:52:43 | INFO     | analysis.timeframe        | MTF: 1h → trend=sideways rsi=48.08
+2026-06-22 01:52:43 | INFO     | analysis.timeframe        | MTF: Fetching EURUSD 15m
+2026-06-22 01:52:43 | INFO     | data.fetcher              | Fetching EURUSD | 15m | 200 candles...
+2026-06-22 01:52:44 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:52:44 | INFO     | analysis.timeframe        | MTF: 15m → trend=sideways rsi=41.98
+2026-06-22 01:52:44 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:52:44 | INFO     | data.fetcher              | Fetching EURUSD | 15m | 300 candles...
+2026-06-22 01:52:44 | INFO     | data.fetcher              | [OK] Got 300 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:52:44 | INFO     | data.validator            | Validating data: EURUSD 15m | rows=300
+2026-06-22 01:52:44 | INFO     | data.validator            | Data validation passed
+2026-06-22 01:52:44 | INFO     | analysis.market_regime    | Regime: TRENDING | Direction: BEARISH | Strength: MODERATE | Volatility: NORMAL
+2026-06-22 01:52:44 | INFO     | market_agent              | [MarketAgent] Done — Price: 1.14692 | Trend: sideways | Regime: TRENDING
+2026-06-22 01:52:44 | INFO     | ai_trader                 | [2/9] Circuit Breaker Gate...
+2026-06-22 01:52:44 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:52:44 | INFO     | ai_trader                 |   🟡  AI TRADER FINAL REPORT — EURUSD
+2026-06-22 01:52:44 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:52:44 | INFO     | ai_trader                 |   Engine       : MT5_DEMO | Approval: AUTONOMOUS
+2026-06-22 01:52:44 | INFO     | ai_trader                 |   Price        : None  |  Session: New York
+2026-06-22 01:52:44 | INFO     | ai_trader                 |   Candle       : 2026-06-19T22:15:00
+2026-06-22 01:52:44 | INFO     | ai_trader                 |   Monitor only : One decision already taken for this candle
+2026-06-22 01:52:44 | INFO     | ai_trader                 |   Memory       : 0 decisions | WR: N/A%
+2026-06-22 01:52:44 | INFO     | ai_trader                 |   Completed in : 1.1s
+2026-06-22 01:52:44 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:52:44 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:52:44 | INFO     | ai_trader                 |   AITrader Week3-Day21 — GBPUSD 15m
+2026-06-22 01:52:44 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:52:44 | INFO     | ai_trader                 | [1/9] Market Agent...
+2026-06-22 01:52:44 | INFO     | market_agent              | [MarketAgent] Running for GBPUSD 15m
+2026-06-22 01:52:44 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:52:44 | INFO     | analysis.timeframe        | MTF: Fetching GBPUSD 1d
+2026-06-22 01:52:44 | INFO     | data.fetcher              | Fetching GBPUSD | 1d | 200 candles...
+2026-06-22 01:52:44 | INFO     | data.fetcher              | [OK] Got 130 candles | Latest: 2026-06-21 00:00:00
+2026-06-22 01:52:44 | INFO     | analysis.timeframe        | MTF: 1d → trend=bearish rsi=31.57
+2026-06-22 01:52:44 | INFO     | analysis.timeframe        | MTF: Fetching GBPUSD 4h
+2026-06-22 01:52:44 | INFO     | data.fetcher              | Fetching GBPUSD | 4h | 200 candles...
+2026-06-22 01:52:44 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 20:00:00
+2026-06-22 01:52:44 | INFO     | analysis.timeframe        | MTF: 4h → trend=strong_bearish rsi=34.86
+2026-06-22 01:52:44 | INFO     | analysis.timeframe        | MTF: Fetching GBPUSD 1h
+2026-06-22 01:52:44 | INFO     | data.fetcher              | Fetching GBPUSD | 1h | 200 candles...
+2026-06-22 01:52:44 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:00:00
+2026-06-22 01:52:44 | INFO     | analysis.timeframe        | MTF: 1h → trend=sideways rsi=53.45
+2026-06-22 01:52:44 | INFO     | analysis.timeframe        | MTF: Fetching GBPUSD 15m
+2026-06-22 01:52:44 | INFO     | data.fetcher              | Fetching GBPUSD | 15m | 200 candles...
+2026-06-22 01:52:45 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:52:45 | INFO     | analysis.timeframe        | MTF: 15m → trend=bullish rsi=56.33
+2026-06-22 01:52:45 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:52:45 | INFO     | data.fetcher              | Fetching GBPUSD | 15m | 300 candles...
+2026-06-22 01:52:45 | INFO     | data.fetcher              | [OK] Got 300 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:52:45 | INFO     | data.validator            | Validating data: GBPUSD 15m | rows=300
+2026-06-22 01:52:45 | INFO     | data.validator            | Data validation passed
+2026-06-22 01:52:45 | INFO     | analysis.market_regime    | Regime: RANGING | Direction: BULLISH | Strength: WEAK | Volatility: NORMAL
+2026-06-22 01:52:45 | INFO     | market_agent              | [MarketAgent] Done — Price: 1.32371 | Trend: bullish | Regime: RANGING
+2026-06-22 01:52:45 | INFO     | ai_trader                 | [2/9] Circuit Breaker Gate...
+2026-06-22 01:52:45 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:52:45 | INFO     | ai_trader                 |   🟡  AI TRADER FINAL REPORT — GBPUSD
+2026-06-22 01:52:45 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:52:45 | INFO     | ai_trader                 |   Engine       : MT5_DEMO | Approval: AUTONOMOUS
+2026-06-22 01:52:45 | INFO     | ai_trader                 |   Price        : None  |  Session: New York
+2026-06-22 01:52:45 | INFO     | ai_trader                 |   Candle       : 2026-06-19T22:15:00
+2026-06-22 01:52:45 | INFO     | ai_trader                 |   Monitor only : One decision already taken for this candle
+2026-06-22 01:52:45 | INFO     | ai_trader                 |   Memory       : 0 decisions | WR: N/A%
+2026-06-22 01:52:45 | INFO     | ai_trader                 |   Completed in : 1.0s
+2026-06-22 01:52:45 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:52:45 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:52:45 | INFO     | ai_trader                 |   AITrader Week3-Day21 — USDJPY 15m
+2026-06-22 01:52:45 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:52:45 | INFO     | ai_trader                 | [1/9] Market Agent...
+2026-06-22 01:52:45 | INFO     | market_agent              | [MarketAgent] Running for USDJPY 15m
+2026-06-22 01:52:45 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:52:45 | INFO     | analysis.timeframe        | MTF: Fetching USDJPY 1d
+2026-06-22 01:52:45 | INFO     | data.fetcher              | Fetching USDJPY | 1d | 200 candles...
+2026-06-22 01:52:45 | INFO     | data.fetcher              | [OK] Got 130 candles | Latest: 2026-06-21 00:00:00
+2026-06-22 01:52:45 | INFO     | analysis.timeframe        | MTF: 1d → trend=bullish rsi=70.55
+2026-06-22 01:52:45 | INFO     | analysis.timeframe        | MTF: Fetching USDJPY 4h
+2026-06-22 01:52:45 | INFO     | data.fetcher              | Fetching USDJPY | 4h | 200 candles...
+2026-06-22 01:52:45 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 20:00:00
+2026-06-22 01:52:45 | INFO     | analysis.timeframe        | MTF: 4h → trend=strong_bullish rsi=64.74
+2026-06-22 01:52:45 | INFO     | analysis.timeframe        | MTF: Fetching USDJPY 1h
+2026-06-22 01:52:45 | INFO     | data.fetcher              | Fetching USDJPY | 1h | 200 candles...
+2026-06-22 01:52:45 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:00:00
+2026-06-22 01:52:45 | INFO     | analysis.timeframe        | MTF: 1h → trend=strong_bullish rsi=54.21
+2026-06-22 01:52:45 | INFO     | analysis.timeframe        | MTF: Fetching USDJPY 15m
+2026-06-22 01:52:45 | INFO     | data.fetcher              | Fetching USDJPY | 15m | 200 candles...
+2026-06-22 01:52:46 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:52:46 | INFO     | analysis.timeframe        | MTF: 15m → trend=strong_bullish rsi=51.18
+2026-06-22 01:52:46 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:52:46 | INFO     | data.fetcher              | Fetching USDJPY | 15m | 300 candles...
+2026-06-22 01:52:46 | INFO     | data.fetcher              | [OK] Got 300 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:52:46 | INFO     | data.validator            | Validating data: USDJPY 15m | rows=300
+2026-06-22 01:52:46 | INFO     | data.validator            | Data validation passed
+2026-06-22 01:52:46 | INFO     | analysis.market_regime    | Regime: TRENDING | Direction: BULLISH | Strength: MODERATE | Volatility: NORMAL
+2026-06-22 01:52:46 | INFO     | market_agent              | [MarketAgent] Done — Price: 161.28 | Trend: strong_bullish | Regime: TRENDING
+2026-06-22 01:52:46 | INFO     | ai_trader                 | [2/9] Circuit Breaker Gate...
+2026-06-22 01:52:46 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:52:46 | INFO     | ai_trader                 |   🟡  AI TRADER FINAL REPORT — USDJPY
+2026-06-22 01:52:46 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:52:46 | INFO     | ai_trader                 |   Engine       : MT5_DEMO | Approval: AUTONOMOUS
+2026-06-22 01:52:46 | INFO     | ai_trader                 |   Price        : None  |  Session: New York
+2026-06-22 01:52:46 | INFO     | ai_trader                 |   Candle       : 2026-06-19T22:15:00
+2026-06-22 01:52:46 | INFO     | ai_trader                 |   Monitor only : One decision already taken for this candle
+2026-06-22 01:52:46 | INFO     | ai_trader                 |   Memory       : 0 decisions | WR: N/A%
+2026-06-22 01:52:46 | INFO     | ai_trader                 |   Completed in : 1.1s
+2026-06-22 01:52:46 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:53:43 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:53:43 | INFO     | ai_trader                 |   AITrader Week3-Day21 — EURUSD 15m
+2026-06-22 01:53:43 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:53:43 | INFO     | ai_trader                 | [1/9] Market Agent...
+2026-06-22 01:53:43 | INFO     | market_agent              | [MarketAgent] Running for EURUSD 15m
+2026-06-22 01:53:43 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:53:43 | INFO     | analysis.timeframe        | MTF: Fetching EURUSD 1d
+2026-06-22 01:53:43 | INFO     | data.fetcher              | Fetching EURUSD | 1d | 200 candles...
+2026-06-22 01:53:43 | INFO     | data.fetcher              | [OK] Got 129 candles | Latest: 2026-06-19 00:00:00
+2026-06-22 01:53:43 | INFO     | analysis.timeframe        | MTF: 1d → trend=bearish rsi=32.62
+2026-06-22 01:53:43 | INFO     | analysis.timeframe        | MTF: Fetching EURUSD 4h
+2026-06-22 01:53:43 | INFO     | data.fetcher              | Fetching EURUSD | 4h | 200 candles...
+2026-06-22 01:53:43 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 20:00:00
+2026-06-22 01:53:43 | INFO     | analysis.timeframe        | MTF: 4h → trend=strong_bearish rsi=36.25
+2026-06-22 01:53:43 | INFO     | analysis.timeframe        | MTF: Fetching EURUSD 1h
+2026-06-22 01:53:43 | INFO     | data.fetcher              | Fetching EURUSD | 1h | 200 candles...
+2026-06-22 01:53:43 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:00:00
+2026-06-22 01:53:44 | INFO     | analysis.timeframe        | MTF: 1h → trend=sideways rsi=48.08
+2026-06-22 01:53:44 | INFO     | analysis.timeframe        | MTF: Fetching EURUSD 15m
+2026-06-22 01:53:44 | INFO     | data.fetcher              | Fetching EURUSD | 15m | 200 candles...
+2026-06-22 01:53:44 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:53:44 | INFO     | analysis.timeframe        | MTF: 15m → trend=sideways rsi=41.98
+2026-06-22 01:53:44 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:53:44 | INFO     | data.fetcher              | Fetching EURUSD | 15m | 300 candles...
+2026-06-22 01:53:44 | INFO     | data.fetcher              | [OK] Got 300 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:53:44 | INFO     | data.validator            | Validating data: EURUSD 15m | rows=300
+2026-06-22 01:53:44 | INFO     | data.validator            | Data validation passed
+2026-06-22 01:53:44 | INFO     | analysis.market_regime    | Regime: TRENDING | Direction: BEARISH | Strength: MODERATE | Volatility: NORMAL
+2026-06-22 01:53:44 | INFO     | market_agent              | [MarketAgent] Done — Price: 1.14692 | Trend: sideways | Regime: TRENDING
+2026-06-22 01:53:44 | INFO     | ai_trader                 | [2/9] Circuit Breaker Gate...
+2026-06-22 01:53:44 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:53:44 | INFO     | ai_trader                 |   🟡  AI TRADER FINAL REPORT — EURUSD
+2026-06-22 01:53:44 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:53:44 | INFO     | ai_trader                 |   Engine       : MT5_DEMO | Approval: AUTONOMOUS
+2026-06-22 01:53:44 | INFO     | ai_trader                 |   Price        : None  |  Session: New York
+2026-06-22 01:53:44 | INFO     | ai_trader                 |   Candle       : 2026-06-19T22:15:00
+2026-06-22 01:53:44 | INFO     | ai_trader                 |   Monitor only : One decision already taken for this candle
+2026-06-22 01:53:44 | INFO     | ai_trader                 |   Memory       : 0 decisions | WR: N/A%
+2026-06-22 01:53:44 | INFO     | ai_trader                 |   Completed in : 1.3s
+2026-06-22 01:53:44 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:53:44 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:53:44 | INFO     | ai_trader                 |   AITrader Week3-Day21 — GBPUSD 15m
+2026-06-22 01:53:44 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:53:44 | INFO     | ai_trader                 | [1/9] Market Agent...
+2026-06-22 01:53:44 | INFO     | market_agent              | [MarketAgent] Running for GBPUSD 15m
+2026-06-22 01:53:44 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:53:44 | INFO     | analysis.timeframe        | MTF: Fetching GBPUSD 1d
+2026-06-22 01:53:44 | INFO     | data.fetcher              | Fetching GBPUSD | 1d | 200 candles...
+2026-06-22 01:53:44 | INFO     | data.fetcher              | [OK] Got 130 candles | Latest: 2026-06-21 00:00:00
+2026-06-22 01:53:44 | INFO     | analysis.timeframe        | MTF: 1d → trend=bearish rsi=31.47
+2026-06-22 01:53:44 | INFO     | analysis.timeframe        | MTF: Fetching GBPUSD 4h
+2026-06-22 01:53:44 | INFO     | data.fetcher              | Fetching GBPUSD | 4h | 200 candles...
+2026-06-22 01:53:44 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 20:00:00
+2026-06-22 01:53:45 | INFO     | analysis.timeframe        | MTF: 4h → trend=strong_bearish rsi=34.86
+2026-06-22 01:53:45 | INFO     | analysis.timeframe        | MTF: Fetching GBPUSD 1h
+2026-06-22 01:53:45 | INFO     | data.fetcher              | Fetching GBPUSD | 1h | 200 candles...
+2026-06-22 01:53:45 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:00:00
+2026-06-22 01:53:45 | INFO     | analysis.timeframe        | MTF: 1h → trend=sideways rsi=53.45
+2026-06-22 01:53:45 | INFO     | analysis.timeframe        | MTF: Fetching GBPUSD 15m
+2026-06-22 01:53:45 | INFO     | data.fetcher              | Fetching GBPUSD | 15m | 200 candles...
+2026-06-22 01:53:45 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:53:45 | INFO     | analysis.timeframe        | MTF: 15m → trend=bullish rsi=56.33
+2026-06-22 01:53:45 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:53:45 | INFO     | data.fetcher              | Fetching GBPUSD | 15m | 300 candles...
+2026-06-22 01:53:45 | INFO     | data.fetcher              | [OK] Got 300 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:53:45 | INFO     | data.validator            | Validating data: GBPUSD 15m | rows=300
+2026-06-22 01:53:45 | INFO     | data.validator            | Data validation passed
+2026-06-22 01:53:45 | INFO     | analysis.market_regime    | Regime: RANGING | Direction: BULLISH | Strength: WEAK | Volatility: NORMAL
+2026-06-22 01:53:45 | INFO     | market_agent              | [MarketAgent] Done — Price: 1.32371 | Trend: bullish | Regime: RANGING
+2026-06-22 01:53:45 | INFO     | ai_trader                 | [2/9] Circuit Breaker Gate...
+2026-06-22 01:53:45 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:53:45 | INFO     | ai_trader                 |   🟡  AI TRADER FINAL REPORT — GBPUSD
+2026-06-22 01:53:45 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:53:45 | INFO     | ai_trader                 |   Engine       : MT5_DEMO | Approval: AUTONOMOUS
+2026-06-22 01:53:45 | INFO     | ai_trader                 |   Price        : None  |  Session: New York
+2026-06-22 01:53:45 | INFO     | ai_trader                 |   Candle       : 2026-06-19T22:15:00
+2026-06-22 01:53:45 | INFO     | ai_trader                 |   Monitor only : One decision already taken for this candle
+2026-06-22 01:53:45 | INFO     | ai_trader                 |   Memory       : 0 decisions | WR: N/A%
+2026-06-22 01:53:45 | INFO     | ai_trader                 |   Completed in : 1.3s
+2026-06-22 01:53:45 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:53:45 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:53:45 | INFO     | ai_trader                 |   AITrader Week3-Day21 — USDJPY 15m
+2026-06-22 01:53:45 | INFO     | ai_trader                 | ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2026-06-22 01:53:45 | INFO     | ai_trader                 | [1/9] Market Agent...
+2026-06-22 01:53:45 | INFO     | market_agent              | [MarketAgent] Running for USDJPY 15m
+2026-06-22 01:53:45 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:53:45 | INFO     | analysis.timeframe        | MTF: Fetching USDJPY 1d
+2026-06-22 01:53:45 | INFO     | data.fetcher              | Fetching USDJPY | 1d | 200 candles...
+2026-06-22 01:53:46 | INFO     | data.fetcher              | [OK] Got 130 candles | Latest: 2026-06-21 00:00:00
+2026-06-22 01:53:46 | INFO     | analysis.timeframe        | MTF: 1d → trend=bullish rsi=70.12
+2026-06-22 01:53:46 | INFO     | analysis.timeframe        | MTF: Fetching USDJPY 4h
+2026-06-22 01:53:46 | INFO     | data.fetcher              | Fetching USDJPY | 4h | 200 candles...
+2026-06-22 01:53:46 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 20:00:00
+2026-06-22 01:53:46 | INFO     | analysis.timeframe        | MTF: 4h → trend=strong_bullish rsi=64.74
+2026-06-22 01:53:46 | INFO     | analysis.timeframe        | MTF: Fetching USDJPY 1h
+2026-06-22 01:53:46 | INFO     | data.fetcher              | Fetching USDJPY | 1h | 200 candles...
+2026-06-22 01:53:46 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:00:00
+2026-06-22 01:53:46 | INFO     | analysis.timeframe        | MTF: 1h → trend=strong_bullish rsi=54.21
+2026-06-22 01:53:46 | INFO     | analysis.timeframe        | MTF: Fetching USDJPY 15m
+2026-06-22 01:53:46 | INFO     | data.fetcher              | Fetching USDJPY | 15m | 200 candles...
+2026-06-22 01:53:46 | INFO     | data.fetcher              | [OK] Got 200 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:53:47 | INFO     | analysis.timeframe        | MTF: 15m → trend=strong_bullish rsi=51.18
+2026-06-22 01:53:47 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 01:53:47 | INFO     | data.fetcher              | Fetching USDJPY | 15m | 300 candles...
+2026-06-22 01:53:47 | INFO     | data.fetcher              | [OK] Got 300 candles | Latest: 2026-06-19 22:15:00
+2026-06-22 01:53:47 | INFO     | data.validator            | Validating data: USDJPY 15m | rows=300
+2026-06-22 01:53:47 | INFO     | data.validator            | Data validation passed
+2026-06-22 01:53:47 | INFO     | analysis.market_regime    | Regime: TRENDING | Direction: BULLISH | Strength: MODERATE | Volatility: NORMAL
+2026-06-22 01:53:47 | INFO     | market_agent              | [MarketAgent] Done — Price: 161.28 | Trend: strong_bullish | Regime: TRENDING
+2026-06-22 01:53:47 | INFO     | ai_trader                 | [2/9] Circuit Breaker Gate...
+2026-06-22 01:53:47 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:53:47 | INFO     | ai_trader                 |   🟡  AI TRADER FINAL REPORT — USDJPY
+2026-06-22 01:53:47 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:53:47 | INFO     | ai_trader                 |   Engine       : MT5_DEMO | Approval: AUTONOMOUS
+2026-06-22 01:53:47 | INFO     | ai_trader                 |   Price        : None  |  Session: New York
+2026-06-22 01:53:47 | INFO     | ai_trader                 |   Candle       : 2026-06-19T22:15:00
+2026-06-22 01:53:47 | INFO     | ai_trader                 |   Monitor only : One decision already taken for this candle
+2026-06-22 01:53:47 | INFO     | ai_trader                 |   Memory       : 0 decisions | WR: N/A%
+2026-06-22 01:53:47 | INFO     | ai_trader                 |   Completed in : 1.3s
+2026-06-22 01:53:47 | INFO     | ai_trader                 | ════════════════════════════════════════════════════
+2026-06-22 01:54:26 | INFO     | ai_trader                 | [System] Stop requested by user
+2026-06-22 10:17:54 | INFO     | database.db               | Database ready: database/trader.db
+2026-06-22 10:18:02 | INFO     | mt5_connection            | ════════════════════════════════════════════
+2026-06-22 10:18:02 | INFO     | mt5_connection            |   🤖  AI TRADER — MT5 CONNECTION
+2026-06-22 10:18:02 | INFO     | mt5_connection            | ════════════════════════════════════════════
+2026-06-22 10:18:02 | INFO     | mt5_connection            |   Connected : MetaQuotes-Demo
+2026-06-22 10:18:02 | INFO     | mt5_connection            |   Account   : 108647429
+2026-06-22 10:18:02 | INFO     | mt5_connection            |   Status    : ✅ Ready
+2026-06-22 10:18:02 | INFO     | mt5_connection            |   Balance   : $100000.00
+2026-06-22 10:18:02 | INFO     | mt5_connection            | ════════════════════════════════════════════
+2026-06-22 10:18:02 | INFO     | mt5_connection            | [MT5Connection] Disconnected
+2026-06-22 10:18:04 | INFO     | data.fetcher              | [OK] DataFetcher initialized | source: yfinance
+2026-06-22 10:18:04 | INFO     | data.fetcher              | Fetching EURUSD | 15m | 5 candles...
+2026-06-22 10:18:05 | INFO     | data.fetcher              | [OK] Got 5 candles | Latest: 2026-06-22 05:15:00
+2026-06-22 10:18:13 | INFO     | ai_analyst                | Groq client initialized | model=llama-3.3-70b-versatile
+2026-06-22 10:18:19 | INFO     | ai_analyst                | Gemini client initialized (fallback ready) | model=gemini-2.0-flash
+2026-06-22 10:19:43 | INFO     | approval_mode             | [ApprovalMode] Active: Mode 3 — AUTONOMOUS
+2026-06-22 10:19:44 | INFO     | trade_memory              | [TradeMemory] Downloading embedding model: all-MiniLM-L6-v2 (~80MB, once only)

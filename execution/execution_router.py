@@ -20,10 +20,12 @@
 # EXECUTION_MODE পাল্টাবে।
 #
 # Day 37 fix: __init__ এখন একটা existing PaperTrader instance accept করে
-# (`paper_trader=`)। আগে এই router নিজের আলাদা PaperTrader বানাতো, যেটা
-# core/trader.py-এর AITrader নিজের self._paper থেকে আলাদা balance/state
-# track করতো — দুটো জায়গায় balance drift করার bug ছিল। এখন একই instance
-# শেয়ার করে।
+# (`paper_trader=`)। আগে এই router নিজের আলাদা PaperTrader বানাতো।
+#
+# Day 38 fix: mt5_demo mode আগে শুধু permission check করে PENDING_EXECUTOR
+# stub রিটার্ন করত — কোনো real order যেত না। এখন broker/order_manager.py
+# (Day 33-এ বানানো, কিন্তু এতদিন wire হয়নি) দিয়ে real mt5.order_send()
+# কল করে, এবং broker/journal_bridge.py দিয়ে DB-তে log করে।
 # ============================================================
 
 from utils.logger import get_logger
@@ -63,6 +65,8 @@ class ExecutionRouter:
             from broker.mt5_connection import MT5Connection
             from broker.health_monitor import HealthMonitor
             from broker.account_manager import AccountManager
+            from broker.order_manager import OrderManager
+            from broker.journal_bridge import JournalBridge
             from config import MT5_LOGIN, MT5_PASSWORD, MT5_SERVER, MT5_PATH
 
             self._mt5_conn = MT5Connection(
@@ -82,7 +86,9 @@ class ExecutionRouter:
                 on_reconnect=lambda msg: log.info(f"[Router] {msg}"),
                 on_fatal=lambda msg: log.error(f"[Router] {msg}"),
             )
-            # Day 32-33-এ এখানে MT5Executor যুক্ত হবে (actual order placement)
+            # Day 38 — real order execution + DB journal wiring
+            self._order_manager  = OrderManager(self._mt5_conn, self._account_manager)
+            self._journal_bridge = JournalBridge(db=self._db)
             log.info("[ExecutionRouter] Mode: MT5_DEMO (real broker, demo account)")
 
         else:
@@ -113,9 +119,18 @@ class ExecutionRouter:
         return self._paper_trader.open_trade_from_signal(adapted)
 
     def _execute_mt5_demo(self, decision_result: dict) -> dict | None:
-        # Day 32-33-এ পূর্ণ implementation আসবে। আজকের জন্য (Day 31)
-        # শুধু safety check পর্যন্ত যাচাই করি যাতে router টা ব্যবহারযোগ্য থাকে।
-        symbol = decision_result.get("symbol", "EURUSD")
+        """
+        Day 38 — real MT5 demo order placement।
+        OrderManager দিয়ে actual mt5.order_send() কল করে, JournalBridge
+        দিয়ে DB-তে save করে — PaperTrader-এর মতো same `trades` table-এ,
+        যাতে learning memory একসাথে থাকে।
+        """
+        symbol    = decision_result.get("symbol", "EURUSD")
+        direction = decision_result.get("decision")
+        lot       = decision_result.get("lot", 0.01)
+        sl        = decision_result.get("sl")
+        tp        = decision_result.get("tp")
+
         perm = self._account_manager.trading_permission(
             symbol=symbol,
             risk_engine_ok=True,   # risk engine আগেই pass করেছে ধরে নেওয়া হলো
@@ -126,15 +141,47 @@ class ExecutionRouter:
             )
             return None
 
-        log.info(
-            f"[ExecutionRouter] MT5 demo — safety checks passed for "
-            f"{perm['broker_symbol']}. Order placement আসবে Day 32-33-এ "
-            f"(MT5Executor)।"
+        broker_symbol = perm["broker_symbol"]
+
+        order_result = self._order_manager.place_market_order(
+            symbol=broker_symbol,
+            direction=direction,
+            lot=lot,
+            sl=sl,
+            tp=tp,
+            comment="ai_trader_demo",
         )
+
+        if not order_result.get("success"):
+            log.error(
+                f"[ExecutionRouter] MT5 demo — order failed: {order_result.get('reason')}"
+            )
+            return None
+
+        filled_entry = order_result.get("price", decision_result.get("entry"))
+        trade_id = self._journal_bridge.log_mt5_open(
+            decision_result   = decision_result,
+            broker_symbol     = broker_symbol,
+            filled_entry      = filled_entry,
+            mt5_order_ticket  = order_result.get("ticket"),
+        )
+
+        log.info(
+            f"[ExecutionRouter] ✅ MT5 demo order FILLED — {direction} {broker_symbol} "
+            f"lot={lot} ticket={order_result.get('ticket')} → DB #{trade_id}"
+        )
+
         return {
-            "status": "PENDING_EXECUTOR",
-            "broker_symbol": perm["broker_symbol"],
-            "decision": decision_result,
+            "id":            trade_id,
+            "status":        "FILLED",
+            "broker_symbol": broker_symbol,
+            "ticket":        order_result.get("ticket"),
+            "entry":         filled_entry,
+            "sl":            sl,
+            "tp":            tp,
+            "lot":           lot,
+            "type":          direction,
+            "pair":          broker_symbol,
         }
 
     def _adapt_decision_for_paper(self, decision_result: dict) -> dict:
