@@ -29,37 +29,28 @@
 # ============================================================
 
 from utils.logger import get_logger
-from config import EXECUTION_MODE, validate_mt5_config
-from execution.paper_trader import PaperTrader
+from config import validate_mt5_config
 
 log = get_logger("execution_router")
 
 
 class ExecutionRouter:
     """
-    Single entry point — DecisionAgent-এর result dict নিয়ে সঠিক
-    execution backend-এ পাঠায়।
+    Single entry point — DecisionAgent-এর result dict নিয়ে MT5 demo
+    broker-এ পাঠায়।
 
     Usage:
-        paper = PaperTrader(db=db)
-        router = ExecutionRouter(mode="paper", db=db, paper_trader=paper)
+        router = ExecutionRouter(db=db)
         trade = router.execute(decision_result)
     """
 
-    def __init__(self, mode: str = None, db=None, paper_trader: PaperTrader = None):
-        self.mode = (mode or EXECUTION_MODE).lower()
-        self._paper_trader = None
+    def __init__(self, mode: str = None, db=None, paper_trader = None):
+        # Mode is always mt5_demo now - paper trading removed
+        self.mode = "mt5_demo"
         self._mt5_executor = None
         self._db = db
 
-        if self.mode == "paper":
-            # Day 37 fix: reuse the caller's PaperTrader instance if given,
-            # instead of always constructing a fresh (and separately
-            # state-tracked) one.
-            self._paper_trader = paper_trader or PaperTrader(db=self._db)
-            log.info("[ExecutionRouter] Mode: PAPER (simulation)")
-
-        elif self.mode == "mt5_demo":
+        if self.mode == "mt5_demo":
             validate_mt5_config()
             # Lazy import — MT5 package না থাকলেও paper mode চলবে
             from broker.mt5_connection import MT5Connection
@@ -99,23 +90,13 @@ class ExecutionRouter:
 
     def execute(self, decision_result: dict) -> dict | None:
         """
-        DecisionAgent.decide()-এর output নিয়ে সঠিক backend-এ trade পাঠায়।
-        Caller-এর জন্য interface একই থাকে, mode যাই হোক।
+        DecisionAgent.decide()-এর output নিয়ে MT5 demo broker-এ trade পাঠায়।
         """
         if decision_result.get("decision") not in ("BUY", "SELL"):
             log.info(f"[ExecutionRouter] No action — decision={decision_result.get('decision')}")
             return None
 
-        if self.mode == "paper":
-            return self._execute_paper(decision_result)
-        elif self.mode == "mt5_demo":
-            return self._execute_mt5_demo(decision_result)
-
-    def _execute_paper(self, decision_result: dict) -> dict | None:
-        # PaperTrader.open_trade_from_signal() একটু আলাদা key-naming আশা করে
-        # (final_action, symbol) — DecisionAgent output adapt করে দিচ্ছি
-        adapted = self._adapt_decision_for_paper(decision_result)
-        return self._paper_trader.open_trade_from_signal(adapted)
+        return self._execute_mt5_demo(decision_result)
 
     def _execute_mt5_demo(self, decision_result: dict) -> dict | None:
         """
@@ -183,20 +164,7 @@ class ExecutionRouter:
             "pair":          broker_symbol,
         }
 
-    def _adapt_decision_for_paper(self, decision_result: dict) -> dict:
-        return {
-            "final_action": decision_result.get("decision"),
-            "symbol": decision_result.get("symbol", "EURUSD"),
-            "entry": decision_result.get("entry"),
-            "sl": decision_result.get("sl"),
-            "tp": decision_result.get("tp"),
-            "lot": decision_result.get("lot"),
-            "confidence": decision_result.get("confidence"),
-            "rr": decision_result.get("rr"),
-            "timeframe": decision_result.get("timeframe", "15M"),
-        }
-
     def shutdown(self) -> None:
-        if self.mode == "mt5_demo" and hasattr(self, "_mt5_conn"):
+        if hasattr(self, "_mt5_conn"):
             self._mt5_conn.disconnect()
         log.info("[ExecutionRouter] Shutdown complete")

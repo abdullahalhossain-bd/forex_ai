@@ -803,27 +803,16 @@ def boot_safety(registry: ServiceRegistry) -> PhaseResult:
 
 
 def boot_execution(registry: ServiceRegistry) -> PhaseResult:
-    """Phase 14 — PaperTrader + ExecutionRouter."""
+    """Phase 14 — ExecutionRouter (MT5 demo only, paper trading removed)."""
     services = []
-    mode = registry.get("execution_mode", "mt5_demo")
-
-    try:
-        from execution.paper_trader import PaperTrader
-        db = registry.try_resolve("db")
-        paper = PaperTrader(starting_balance=10000, db=db)
-        registry.register_instance("paper_trader", paper)
-        services.append("paper_trader")
-    except Exception as e:
-        log.error("PaperTrader init failed: %s", e)
 
     try:
         from execution.execution_router import ExecutionRouter
         db = registry.try_resolve("db")
-        paper = registry.try_resolve("paper_trader")
-        router = ExecutionRouter(mode=mode, db=db, paper_trader=paper)
+        router = ExecutionRouter(db=db)
         registry.register_instance("execution_router", router)
         services.append("execution_router")
-        log.info("ExecutionRouter wired in %s mode", mode.upper())
+        log.info("ExecutionRouter wired in MT5_DEMO mode")
     except Exception as e:
         log.error("ExecutionRouter init failed: %s", e)
 

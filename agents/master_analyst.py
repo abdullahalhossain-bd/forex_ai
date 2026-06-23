@@ -35,6 +35,8 @@ _groq_client = None
 _gemini_client = None
 _key_manager = None
 MODEL = ""
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 MAX_TOK = 1500
 
 try:
@@ -42,14 +44,14 @@ try:
     _key_manager = get_llm_key_manager()
     _groq_client = _key_manager.get_groq_client()
     if _groq_client is not None:
-        MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        MODEL = GROQ_MODEL
         LLM_AVAILABLE = True
         _provider = "groq"
         log.info(f"[MasterAnalyst] Groq client initialized | model={MODEL}")
     if not LLM_AVAILABLE:
         _gemini_client = _key_manager.get_gemini_client()
         if _gemini_client is not None:
-            MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+            MODEL = GEMINI_MODEL
             LLM_AVAILABLE = True
             _provider = "gemini"
             log.info(f"[MasterAnalyst] Gemini client initialized (fallback) | model={MODEL}")
@@ -60,7 +62,7 @@ except Exception as e:
         try:
             from groq import Groq
             _groq_client = Groq(api_key=groq_key)
-            MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+            MODEL = GROQ_MODEL
             LLM_AVAILABLE = True
             _provider = "groq"
             log.info(f"[MasterAnalyst] Groq client initialized (single-key) | model={MODEL}")
@@ -72,7 +74,7 @@ except Exception as e:
             try:
                 from google import genai as google_genai
                 _gemini_client = google_genai.Client(api_key=gemini_key)
-                MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+                MODEL = GEMINI_MODEL
                 LLM_AVAILABLE = True
                 _provider = "gemini"
                 log.info(f"[MasterAnalyst] Gemini client initialized (single-key fallback) | model={MODEL}")
@@ -221,7 +223,8 @@ Before deciding BUY/SELL/WAIT, walk through these layers IN ORDER:
             raw    = self._call_llm(context)
             parsed = self._parse_response(raw)
         except Exception as e:
-            log.error(f"[MasterAnalyst] LLM error: {e}")
+            from core.llm_key_manager import log_llm_call_failure
+            log_llm_call_failure(log, "MasterAnalyst", MODEL, 0, 1, e)
             return self._fallback_result(signal, str(e))
 
         final_conf = self._calculate_final_confidence(
@@ -554,6 +557,7 @@ Before deciding BUY/SELL/WAIT, walk through these layers IN ORDER:
         )
 
         import time as _time
+        from core.llm_key_manager import log_llm_call_failure
 
         # Primary: Groq (with multi-key retry)
         max_retries = 3
@@ -562,10 +566,11 @@ Before deciding BUY/SELL/WAIT, walk through these layers IN ORDER:
             if client is None and _key_manager is not None:
                 client = _key_manager.get_groq_client()
             if client is None:
+                log.error("[MasterAnalyst] No Groq client available (keys exhausted or missing)")
                 break
             try:
                 resp = client.chat.completions.create(
-                    model=MODEL,
+                    model=GROQ_MODEL,
                     max_tokens=MAX_TOK,
                     temperature=0.2,
                     messages=[
@@ -577,11 +582,13 @@ Before deciding BUY/SELL/WAIT, walk through these layers IN ORDER:
                     _key_manager.mark_groq_success()
                 return resp.choices[0].message.content.strip()
             except Exception as e:
-                error_str = str(e)
-                rate_limited = "429" in error_str or "rate" in error_str.lower()
-                log.warning(f"[MasterAnalyst] Groq call failed (attempt {attempt+1}): {error_str[:100]}")
+                info = log_llm_call_failure(
+                    log, "Groq", GROQ_MODEL, attempt, max_retries, e
+                )
                 if _key_manager is not None:
-                    _key_manager.mark_groq_failure(error_str, rate_limited)
+                    _key_manager.mark_groq_failure(
+                        info["error_str"], info["rate_limited"]
+                    )
                     # Get fresh client with different key
                     import sys
                     current_module = sys.modules[__name__]
@@ -595,22 +602,25 @@ Before deciding BUY/SELL/WAIT, walk through these layers IN ORDER:
             if client is None and _key_manager is not None:
                 client = _key_manager.get_gemini_client()
             if client is None:
+                log.error("[MasterAnalyst] No Gemini client available (keys exhausted or missing)")
                 break
             try:
                 full_prompt = f"{self._SYSTEM}\n\n{user_prompt}"
                 resp = client.models.generate_content(
-                    model=MODEL,
+                    model=GEMINI_MODEL,
                     contents=full_prompt,
                 )
                 if _key_manager is not None:
                     _key_manager.mark_gemini_success()
                 return resp.text.strip()
             except Exception as e:
-                error_str = str(e)
-                rate_limited = "429" in error_str or "rate" in error_str.lower()
-                log.warning(f"[MasterAnalyst] Gemini call failed (attempt {attempt+1}): {error_str[:100]}")
+                info = log_llm_call_failure(
+                    log, "Gemini", GEMINI_MODEL, attempt, max_retries, e
+                )
                 if _key_manager is not None:
-                    _key_manager.mark_gemini_failure(error_str, rate_limited)
+                    _key_manager.mark_gemini_failure(
+                        info["error_str"], info["rate_limited"]
+                    )
                     import sys
                     current_module = sys.modules[__name__]
                     current_module._gemini_client = _key_manager.get_gemini_client()

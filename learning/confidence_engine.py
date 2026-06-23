@@ -42,7 +42,7 @@ CONFIDENCE_HIST_PATH = "memory/confidence_history.json"
 DISABLED_PATTERNS_PATH = "memory/disabled_patterns.json"
 
 # ── Constants ─────────────────────────────────────────────────
-MIN_SAMPLE_SIZE       = 30    # এর কম trades থাকলে Bayesian uncertainty apply
+MIN_SAMPLE_SIZE       = 5     # Lowered from 30 to allow early trading (learning phase)
 SKIP_THRESHOLD        = 30.0  # win rate এর নিচে গেলে pattern disable
 RECENT_WINDOW         = 10    # last N trades
 DECAY_HALF_LIFE_DAYS  = 90    # 90 দিন পুরনো data → 50% weight
@@ -565,7 +565,7 @@ class ConfidenceEngine:
         if should_skip:
             final_signal = "NO TRADE"
             decision = "SKIP"
-        elif final_conf < 45:
+        elif final_conf < 25:   # Lowered from 45 to 25 to allow early trading phase
             final_signal = "WAIT"
             decision = "WAIT"
         else:

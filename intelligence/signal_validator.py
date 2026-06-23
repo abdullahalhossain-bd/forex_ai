@@ -34,10 +34,10 @@ log = get_logger("signal_validator")
 
 
 # ── Minimum aligned factors required to take a trade ────────────────
-# Lowered from 5 to 3 — 5 was too strict, blocking most good trades.
+# Lowered from 5 to 2 — 5 was too strict, blocking most good trades.
 # With 7 factors, requiring 5 aligned means 71% agreement which is very rare.
-# 3 out of 7 (43%) is more reasonable for a multi-factor system.
-MIN_ALIGNED_FACTORS = 3
+# 2 out of 7 (29%) allows good signals through while still maintaining confluence.
+MIN_ALIGNED_FACTORS = 2
 
 # ── Top-weight factors that must NOT strongly disagree ──────────────
 # If any pair of these factors have opposing BUY/SELL directions AND

@@ -40,6 +40,10 @@ class CorrelationEngine:
             import yfinance as yf
 
             pair_yf = self._normalize(pair_symbol)
+            # Skip commodity pairs that can't be normalized to Yahoo Finance format
+            if pair_yf is None:
+                return self._empty(pair_symbol, label)
+                
             symbols = [pair_yf, asset_symbol]
 
             data   = yf.download(symbols, period=CORR_PERIOD, interval=CORR_INTERVAL, progress=False)
@@ -101,6 +105,9 @@ class CorrelationEngine:
 
     def _normalize(self, symbol: str) -> str:
         symbol = symbol.upper().replace("/", "").replace("=X", "")
+        # Skip commodity pairs (XAUUSD, XAGUSD) — not forex pairs on Yahoo Finance
+        if symbol in ("XAUUSD", "XAGUSD"):
+            return None
         return symbol + "=X"
 
     def _strength(self, corr: float) -> str:

@@ -53,6 +53,55 @@ for _env_path in [
 log = logging.getLogger("llm_key_manager")
 
 
+def classify_llm_error(error: Exception) -> dict:
+    """Classify LLM API failures without false positives (e.g. 'rate' in 'generate')."""
+    error_str = str(error)
+    err_lower = error_str.lower()
+    return {
+        "error_str": error_str,
+        "error_type": type(error).__name__,
+        "rate_limited": (
+            "429" in error_str
+            or "too many requests" in err_lower
+            or "rate limit" in err_lower
+            or "rate_limit" in err_lower
+        ),
+        "auth_failed": (
+            "401" in error_str
+            or "403" in error_str
+            or "unauthorized" in err_lower
+            or "invalid api key" in err_lower
+            or "invalid x-api-key" in err_lower
+        ),
+    }
+
+
+def log_llm_call_failure(
+    logger: logging.Logger,
+    provider: str,
+    model: str,
+    attempt: int,
+    max_retries: int,
+    error: Exception,
+) -> dict:
+    """Log full LLM failure details for diagnosis."""
+    info = classify_llm_error(error)
+    logger.error(
+        "[LLM] %s failed attempt %s/%s | model=%s | type=%s | "
+        "rate_limited=%s | auth_failed=%s | error=%s",
+        provider,
+        attempt + 1,
+        max_retries,
+        model,
+        info["error_type"],
+        info["rate_limited"],
+        info["auth_failed"],
+        info["error_str"][:800],
+        exc_info=True,
+    )
+    return info
+
+
 # ── Key health tracking ─────────────────────────────────────────────
 
 @dataclass

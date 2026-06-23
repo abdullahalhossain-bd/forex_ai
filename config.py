@@ -86,7 +86,6 @@ SR_TOLERANCE = 0.0015
 LOG_FILE = str(LOG_DIR / "trader.log")
 
 # ── System / Operational Loops ─────────────────────────────────
-PAPER_BALANCE = 10000
 LOOP_INTERVAL_SEC = 90             # 90s (was 60) — 28 pairs need more analysis time
 BACKUP_INTERVAL_MIN = 30
 RECOVERY_COOLDOWN_MIN = 5
@@ -243,7 +242,7 @@ class Config:
     SR_TOLERANCE = SR_TOLERANCE
 
     # System
-    PAPER_BALANCE = PAPER_BALANCE
+
     LOOP_INTERVAL_SEC = LOOP_INTERVAL_SEC
     BACKUP_INTERVAL_MIN = BACKUP_INTERVAL_MIN
     RECOVERY_COOLDOWN_MIN = RECOVERY_COOLDOWN_MIN

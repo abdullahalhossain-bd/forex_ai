@@ -18,7 +18,7 @@ class TradePermission:
         5. Confluence enough?
     """
 
-    MIN_CONFIDENCE = 50   # Lowered from 55 to 50 — original was too strict, blocking many valid trades
+    MIN_CONFIDENCE = 25   # Lowered to 25 — allow rule-based trades even with low confidence (LLM unavailable)
 
     def check(
         self,

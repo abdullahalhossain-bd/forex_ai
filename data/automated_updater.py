@@ -172,6 +172,10 @@ class ForexDataUpdater:
     def _fetch_from_yahoo(self, pair: str, start_date: datetime, end_date: datetime) -> pd.DataFrame:
         """Fetch data from Yahoo Finance"""
         try:
+            # Skip commodity pairs (XAUUSD, XAGUSD) — not available on Yahoo Finance in this format
+            if pair.upper() in ("XAUUSD", "XAGUSD"):
+                return pd.DataFrame()
+            
             # Yahoo uses different format (EURUSD=X)
             yahoo_pair = pair.replace('/', '=X')
             

@@ -327,8 +327,16 @@ class AnalysisAgent:
 
         elif master_ctx.get("master_signal") in ("BUY", "SELL", "WAIT"):
             ma_signal    = master_ctx["master_signal"]
-            final_signal = "NO TRADE" if ma_signal == "WAIT" else ma_signal
-            log.info(f"[AnalysisAgent] -> {final_signal} (MasterAnalyst override)")
+            # If master returns WAIT but rule signal is BUY/SELL with good confidence, use rule signal
+            rule_sig = signal_result.get("signal", "WAIT")
+            rule_conf = signal_result.get("confidence", 0)
+            if ma_signal == "WAIT" and rule_sig in ("BUY", "SELL") and rule_conf >= 30:
+                final_signal = rule_sig
+                log.info(f"[AnalysisAgent] -> {final_signal} (Rule signal: {rule_conf}% conf, master WAIT)")
+            else:
+                final_signal = "NO TRADE" if ma_signal == "WAIT" else ma_signal
+                log.info(f"[AnalysisAgent] -> {final_signal} (MasterAnalyst override)")
+
 
         # ── Day 66: News Intelligence integration ────────────────────
         # After MasterAnalyst decides, run NewsIntelligence to:

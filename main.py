@@ -70,7 +70,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import (
     Config, EXECUTION_MODE, USE_SCANNER, APPROVAL_MODE,
-    INITIAL_BALANCE, PAPER_BALANCE, LOOP_INTERVAL_SEC,
+    INITIAL_BALANCE, LOOP_INTERVAL_SEC,
     BACKUP_INTERVAL_MIN, RECOVERY_COOLDOWN_MIN,
     ENABLE_TELEGRAM, SYMBOLS, DEFAULT_TIMEFRAME,
     validate_mt5_config, validate_telegram_config,
@@ -154,18 +154,14 @@ class ForexAISystem:
         self.start_time = None
         self._stop_requested = False
 
-        # Resolve execution mode
-        self.execution_mode = (
-            "paper" if getattr(self.args, "paper", False) else EXECUTION_MODE
-        )
+        # Resolve execution mode (MT5 demo only - paper trading removed)
+        self.execution_mode = EXECUTION_MODE  # Always mt5_demo
         self.enable_telegram = ENABLE_TELEGRAM and not getattr(
             self.args, "no_telegram", False
         )
         self.symbols = self._resolve_symbols()
         self.timeframe = getattr(self.args, "timeframe", None) or DEFAULT_TIMEFRAME
-        self.balance = (
-            PAPER_BALANCE if self.execution_mode == "paper" else INITIAL_BALANCE
-        )
+        self.balance = INITIAL_BALANCE
 
         # The trader is constructed by the runtime's RUNTIME phase and
         # registered in the ServiceRegistry under "trader" / "trading_engine".

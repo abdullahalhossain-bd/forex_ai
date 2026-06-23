@@ -119,6 +119,10 @@ class SentimentDataProvider:
         try:
             import yfinance as yf
             pair_yf = self._normalize_pair(pair)
+            # Skip commodity pairs
+            if pair_yf is None:
+                return self._fallback_retail(pair)
+            
             ticker  = yf.Ticker(pair_yf)
             df      = ticker.history(period="5d", interval="1h")
 
@@ -348,6 +352,9 @@ class SentimentDataProvider:
     def _normalize_pair(self, pair: str) -> str:
         """pair → yfinance symbol"""
         pair = pair.upper().replace("/", "").replace("=X", "")
+        # Skip commodity pairs (XAUUSD, XAGUSD) — not available on Yahoo Finance in this format
+        if pair in ("XAUUSD", "XAGUSD"):
+            return None
         return pair + "=X"
 
     def print_summary(self, data: dict) -> None:

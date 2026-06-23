@@ -46,7 +46,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # Quiet down the chatty loggers during the scan
-os.environ.setdefault("EXECUTION_MODE", "paper")
+os.environ.setdefault("EXECUTION_MODE", "mt5_demo")
 os.environ.setdefault("APPROVAL_MODE", "3")
 os.environ.setdefault("ENABLE_TELEGRAM", "false")
 os.environ.setdefault("USE_SCANNER", "false")

@@ -249,11 +249,14 @@ OUTPUT FORMAT — Return ONLY valid JSON, no extra text:
                     self._key_manager.mark_groq_success()
                 return resp.choices[0].message.content
             except Exception as e:
-                error_str = str(e)
-                rate_limited = "429" in error_str or "rate" in error_str.lower()
-                log.warning(f"Groq call failed (attempt {attempt+1}/{max_retries}): {error_str[:100]}")
+                from core.llm_key_manager import log_llm_call_failure
+                info = log_llm_call_failure(
+                    log, "Groq", self.GROQ_MODEL, attempt, max_retries, e
+                )
                 if hasattr(self, '_key_manager') and self._key_manager:
-                    self._key_manager.mark_groq_failure(error_str, rate_limited)
+                    self._key_manager.mark_groq_failure(
+                        info["error_str"], info["rate_limited"]
+                    )
                     # Get a fresh client with a different key
                     self._groq_client = self._key_manager.get_groq_client()
                 if attempt < max_retries - 1:
@@ -279,11 +282,14 @@ OUTPUT FORMAT — Return ONLY valid JSON, no extra text:
                     self._key_manager.mark_gemini_success()
                 return resp.text
             except Exception as e:
-                error_str = str(e)
-                rate_limited = "429" in error_str or "rate" in error_str.lower()
-                log.warning(f"Gemini call failed (attempt {attempt+1}/{max_retries}): {error_str[:100]}")
+                from core.llm_key_manager import log_llm_call_failure
+                info = log_llm_call_failure(
+                    log, "Gemini", self.GEMINI_MODEL, attempt, max_retries, e
+                )
                 if hasattr(self, '_key_manager') and self._key_manager:
-                    self._key_manager.mark_gemini_failure(error_str, rate_limited)
+                    self._key_manager.mark_gemini_failure(
+                        info["error_str"], info["rate_limited"]
+                    )
                     self._gemini_client = self._key_manager.get_gemini_client()
                 if attempt < max_retries - 1:
                     time.sleep(1)
