@@ -12,13 +12,42 @@ from utils.logger import get_logger
 log = get_logger(__name__)
 
 # Symbol mapping — internal style → yfinance style
+# Updated: metals use futures symbols (GC=F, SI=F) as primary, =X as fallback
 SYMBOL_MAP = {
+    # Forex majors
     "EURUSD": "EURUSD=X",
     "GBPUSD": "GBPUSD=X",
     "USDJPY": "USDJPY=X",
     "AUDUSD": "AUDUSD=X",
     "USDCHF": "USDCHF=X",
     "USDCAD": "USDCAD=X",
+    "NZDUSD": "NZDUSD=X",
+    # Forex crosses — all need =X
+    "EURGBP": "EURGBP=X",
+    "EURJPY": "EURJPY=X",
+    "EURCHF": "EURCHF=X",
+    "EURAUD": "EURAUD=X",
+    "EURCAD": "EURCAD=X",
+    "EURNZD": "EURNZD=X",
+    "GBPJPY": "GBPJPY=X",
+    "GBPCHF": "GBPCHF=X",
+    "GBPAUD": "GBPAUD=X",
+    "GBPCAD": "GBPCAD=X",
+    "GBPNZD": "GBPNZD=X",
+    "AUDJPY": "AUDJPY=X",
+    "AUDCHF": "AUDCHF=X",
+    "AUDCAD": "AUDCAD=X",
+    "AUDNZD": "AUDNZD=X",
+    "NZDJPY": "NZDJPY=X",
+    "NZDCHF": "NZDCHF=X",
+    "NZDCAD": "NZDCAD=X",
+    "CADJPY": "CADJPY=X",
+    "CADCHF": "CADCHF=X",
+    "CHFJPY": "CHFJPY=X",
+    # Metals — use futures symbols (more reliable on yfinance)
+    "XAUUSD": "GC=F",      # Gold futures (primary)
+    "XAGUSD": "SI=F",      # Silver futures (primary)
+    # Legacy compat
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
     "USD/JPY": "USDJPY=X",
@@ -30,6 +59,12 @@ SYMBOL_MAP = {
     "USDJPY=X": "USDJPY=X",
     "EURUSD=X": "EURUSD=X",
     "GBPUSD=X": "GBPUSD=X",
+}
+
+# Fallback symbols — if primary fails, try these alternatives
+SYMBOL_FALLBACKS = {
+    "XAUUSD": ["GC=F", "XAUUSD=X", "GLD"],       # Gold: futures → forex → ETF
+    "XAGUSD": ["SI=F", "XAGUSD=X", "SLV"],        # Silver: futures → forex → ETF
 }
 
 # Timeframe mapping — our style → yfinance style
@@ -91,43 +126,62 @@ class DataFetcher:
     def _fetch_yfinance(self, symbol, timeframe, limit):
         import yfinance as yf
 
-        # Symbol convert
+        # Symbol convert — use SYMBOL_MAP, or auto-append =X for forex
         yf_symbol = SYMBOL_MAP.get(symbol, symbol)
-        yf_tf     = TF_MAP.get(timeframe, timeframe)
+        # Auto-append =X for 6-letter forex pairs that don't already have it
+        if not yf_symbol.endswith("=X") and "=" not in yf_symbol and len(yf_symbol) == 6 and yf_symbol.isalpha():
+            yf_symbol = yf_symbol + "=X"
+            log.debug(f"Auto-appended =X: {symbol} → {yf_symbol}")
 
-        # Limit → period calculate
-        period = self._limit_to_period(timeframe, limit)
+        yf_tf = TF_MAP.get(timeframe, timeframe)
+        periods_to_try = self._get_period_fallbacks(timeframe, limit)
 
-        try:
-            ticker = yf.Ticker(yf_symbol)
-            raw    = ticker.history(period=period, interval=yf_tf)
+        # Build list of symbols to try: primary + fallbacks
+        symbols_to_try = [yf_symbol]
+        if symbol in SYMBOL_FALLBACKS:
+            for fb in SYMBOL_FALLBACKS[symbol]:
+                if fb not in symbols_to_try:
+                    symbols_to_try.append(fb)
+        if symbol not in SYMBOL_FALLBACKS and not yf_symbol.endswith("=X"):
+            symbols_to_try.append(symbol + "=X")
 
-            if raw.empty:
-                log.error(f"yfinance returned empty data for {yf_symbol}")
-                return None
+        # Try each symbol × each period until one works
+        for try_symbol in symbols_to_try:
+            for try_period in periods_to_try:
+                try:
+                    ticker = yf.Ticker(try_symbol)
+                    raw = ticker.history(period=try_period, interval=yf_tf)
 
-            # Column rename → lowercase
-            df = raw.rename(columns={
-                'Open':   'open',
-                'High':   'high',
-                'Low':    'low',
-                'Close':  'close',
-                'Volume': 'volume',
-            })[['open', 'high', 'low', 'close', 'volume']]
+                    if raw.empty:
+                        log.debug(f"yfinance returned empty for {try_symbol} period={try_period}, trying next...")
+                        continue
 
-            # Timezone remove (naive datetime)
-            if df.index.tz is not None:
-                df.index = df.index.tz_localize(None)
+                    # Column rename → lowercase
+                    df = raw.rename(columns={
+                        'Open':   'open',
+                        'High':   'high',
+                        'Low':    'low',
+                        'Close':  'close',
+                        'Volume': 'volume',
+                    })[['open', 'high', 'low', 'close', 'volume']]
 
-            # Limit to requested candles
-            df = df.tail(limit)
+                    # Timezone remove (naive datetime)
+                    if df.index.tz is not None:
+                        df.index = df.index.tz_localize(None)
 
-            log.info(f"[OK] Got {len(df)} candles | Latest: {df.index[-1]}")
-            return df
+                    # Limit to requested candles
+                    df = df.tail(limit)
 
-        except Exception as e:
-            log.error(f"yfinance error: {e}")
-            return None
+                    log.info(f"[OK] Got {len(df)} candles for {symbol} via {try_symbol} period={try_period} | Latest: {df.index[-1]}")
+                    return df
+
+                except Exception as e:
+                    log.debug(f"yfinance error for {try_symbol} period={try_period}: {e}")
+                    continue
+
+        # All symbols failed
+        log.error(f"yfinance failed for {symbol} — tried {symbols_to_try}")
+        return None
 
     def _limit_to_period(self, timeframe, limit):
         """limit candles → yfinance period string"""
@@ -143,6 +197,17 @@ class DataFetcher:
         if total_days <= 60:   return "60d"
         if total_days <= 90:   return "90d"
         return "6mo"
+
+    def _get_period_fallbacks(self, timeframe, limit):
+        """Return a list of periods to try if the primary period fails.
+        yfinance sometimes fails on 30d for 1h but works on 60d or 90d."""
+        primary = self._limit_to_period(timeframe, limit)
+        fallbacks = [primary]
+        # Add longer periods as fallback
+        for p in ["60d", "90d", "6mo", "1y"]:
+            if p not in fallbacks:
+                fallbacks.append(p)
+        return fallbacks
 
     # ─────────────────────────────────────────────
     # SOURCE 2: tvdatafeed (TradingView)

@@ -330,6 +330,462 @@ class AnalysisAgent:
             final_signal = "NO TRADE" if ma_signal == "WAIT" else ma_signal
             log.info(f"[AnalysisAgent] -> {final_signal} (MasterAnalyst override)")
 
+        # ── Day 66: News Intelligence integration ────────────────────
+        # After MasterAnalyst decides, run NewsIntelligence to:
+        #   1. BLOCK the trade if pair is in a high-impact event window
+        #   2. ADJUST confidence based on news bias alignment
+        news_intel_ctx = {}
+        try:
+            from intelligence.news_ai import get_news_intelligence
+            # Use the symbol passed in market_output (or fallback to EURUSD)
+            symbol = market_output.get("symbol", "EURUSD") if isinstance(market_output, dict) else "EURUSD"
+            news_ai = get_news_intelligence()
+            # Refresh pair universe if needed
+            try:
+                from config import SYMBOLS
+                news_ai.set_pairs(list(SYMBOLS))
+            except Exception:
+                pass
+
+            # 1. Block check
+            block_check = news_ai.should_block_trade(symbol)
+            if block_check["blocked"] and final_signal in ("BUY", "SELL"):
+                log.warning(
+                    f"[AnalysisAgent] -> NO TRADE (Day 66 News block: {block_check['reason']})"
+                )
+                final_signal = "NO TRADE"
+                news_intel_ctx = {
+                    "blocked": True,
+                    "block_reason": block_check["reason"],
+                }
+            else:
+                # 2. Confidence adjustment
+                if final_signal in ("BUY", "SELL"):
+                    # Get base confidence from master_ctx
+                    base_conf = float(master_ctx.get("master_confidence", 50) or 50)
+                    adjustment = news_ai.adjust_confidence(symbol, base_conf, final_signal)
+                    news_intel_ctx = {
+                        "blocked": False,
+                        "news_bias": adjustment["news_bias"],
+                        "confidence_change": adjustment["change"],
+                        "adjustment_reason": adjustment["reason"],
+                        "adjusted_confidence": adjustment["adjusted_confidence"],
+                    }
+                    if adjustment["change"] != 0:
+                        log.info(
+                            f"[AnalysisAgent] Day 66 news confidence adjustment: "
+                            f"{adjustment['change']:+.0f} ({adjustment['reason']})"
+                        )
+                        # Update master_ctx confidence so downstream DecisionAgent sees it
+                        try:
+                            master_ctx["master_confidence"] = adjustment["adjusted_confidence"]
+                        except Exception:
+                            pass
+                else:
+                    news_intel_ctx = {"blocked": False, "news_bias": "N/A"}
+
+            # Attach full report for dashboard / journal
+            try:
+                latest = news_ai.latest_report()
+                if latest is not None:
+                    news_intel_ctx["next_high_impact_event"] = latest.next_high_impact_event
+                    news_intel_ctx["sentiment_summary"] = latest.sentiment_summary
+                    news_intel_ctx["pair_biases"] = latest.pair_biases
+                    news_intel_ctx["blocked_pairs"] = latest.blocked_pairs
+            except Exception:
+                pass
+        except Exception as e:
+            log.warning(f"[AnalysisAgent] Day 66 NewsIntelligence failed: {e}")
+            news_intel_ctx = {"error": str(e)}
+
+        # ── Day 67: Multi-Factor Confluence Engine ────────────────────
+        # Run the confluence engine over ALL 7 analysis factors. This produces
+        # a weighted score, runs validation gates (5+ factor rule, contradiction
+        # detector, news block, etc.), and produces a final calibrated decision.
+        confluence_ctx = {}
+        try:
+            from intelligence.confluence_engine import get_confluence_engine
+            symbol = market_output.get("symbol", "EURUSD") if isinstance(market_output, dict) else "EURUSD"
+            timeframe = market_output.get("timeframe", "15m") if isinstance(market_output, dict) else "15m"
+
+            # Build a unified analysis dict for the confluence engine
+            unified_analysis = {
+                "smc_ctx": smc_ctx,
+                "session_ctx": session_ctx,
+                "intermarket_ctx": intermarket_ctx,
+                "sentiment_ctx": sentiment_ctx,
+                "news_intelligence": news_intel_ctx,
+                "signal": signal_result,
+                "bias_ctx": bias_ctx,
+            }
+
+            engine = get_confluence_engine()
+            # Pull news-blocked pairs for the validator
+            news_blocked = {}
+            try:
+                latest = news_ai.latest_report() if 'news_ai' in dir() else None
+                if latest is not None:
+                    news_blocked = latest.blocked_pairs
+            except Exception:
+                pass
+
+            decision = engine.evaluate(
+                pair=symbol,
+                timeframe=timeframe,
+                analysis_out=unified_analysis,
+                news_blocked_pairs=news_blocked,
+                risk_approved=True,  # risk check happens downstream in AITrader
+                correlation_blocked=False,  # same
+            )
+
+            confluence_ctx = decision.to_dict()
+
+            # Day 67 override: only block if confluence says AVOID (not B or higher)
+            # Made more permissive: B quality trades are now allowed through.
+            if not decision.should_trade and final_signal in ("BUY", "SELL"):
+                # Only block if setup quality is AVOID (worst)
+                # B quality = proceed with reduced confidence
+                if decision.setup_quality == "AVOID":
+                    log.info(
+                        f"[AnalysisAgent] Day 67 Confluence: {final_signal} → NO TRADE "
+                        f"(quality=AVOID, {decision.block_reason or 'failed validation'})"
+                    )
+                    final_signal = "NO TRADE"
+                else:
+                    log.info(
+                        f"[AnalysisAgent] Day 67 Confluence: {final_signal} allowed "
+                        f"(quality={decision.setup_quality}, factors={decision.aligned_factors}/{decision.total_factors})"
+                    )
+            elif decision.should_trade and decision.direction in ("BUY", "SELL"):
+                # Confluence confirms — use its calibrated confidence
+                final_signal = decision.direction
+                log.info(
+                    f"[AnalysisAgent] Day 67 Confluence confirms {decision.direction} "
+                    f"| Quality={decision.setup_quality} | Conf={decision.confidence:.0f}% | "
+                    f"Factors={decision.aligned_factors}/{decision.total_factors} | "
+                    f"Net={decision.net_score:+.1f}"
+                )
+                try:
+                    master_ctx["master_confidence"] = decision.confidence
+                except Exception:
+                    pass
+        except Exception as e:
+            log.warning(f"[AnalysisAgent] Day 67 ConfluenceEngine failed: {e}")
+            confluence_ctx = {"error": str(e)}
+
+        # ── Day 68: Feature Engineering Layer ─────────────────────────
+        # Build a ~110-feature vector from the current market state + all
+        # analysis contexts. Persist to the FeatureStore for ML training.
+        # The feature vector is attached to the output for downstream ML
+        # inference (Day 69+).
+        feature_vector_ctx: Dict[str, Any] = {}
+        full_feature_vector: Dict[str, float] = {}
+        try:
+            from ml.feature_engineer import get_feature_engineer
+            from ml.feature_store import get_feature_store
+            symbol = market_output.get("symbol", "EURUSD") if isinstance(market_output, dict) else "EURUSD"
+            timeframe = market_output.get("timeframe", "15m") if isinstance(market_output, dict) else "15m"
+
+            engineer = get_feature_engineer()
+            unified_for_features = {
+                "smc_ctx": smc_ctx,
+                "session_ctx": session_ctx,
+                "intermarket_ctx": intermarket_ctx,
+                "sentiment_ctx": sentiment_ctx,
+                "news_intelligence": news_intel_ctx,
+                "signal": signal_result,
+                "bias_ctx": bias_ctx,
+                "fib_ctx": fib_ctx,
+                "sr_ctx": sr_ctx,
+                "advanced_pat_ctx": advanced_pat_ctx,
+                "mtf_bias": market_output.get("mtf_bias") if isinstance(market_output, dict) else None,
+                "confluence": confluence_ctx,
+                "master_ctx": master_ctx,
+                "llm": (master_ctx or {}).get("llm", {}) if isinstance(master_ctx, dict) else {},
+            }
+            full_feature_vector = engineer.build_feature_vector(
+                df=df, analysis_out=unified_for_features, pair=symbol, timeframe=timeframe,
+            )
+            feature_vector_ctx = {
+                "feature_count": len(full_feature_vector),
+                "features_preview": dict(list(full_feature_vector.items())[:10]),
+                "pair": symbol,
+                "timeframe": timeframe,
+            }
+            log.info(
+                f"[AnalysisAgent] Day 68 Feature Engineering: {len(full_feature_vector)} features generated for {symbol} {timeframe}"
+            )
+
+            # Persist to feature store (for ML training later)
+            try:
+                store = get_feature_store()
+                label = None
+                if final_signal == "BUY":
+                    label = 1
+                elif final_signal == "SELL":
+                    label = 0
+                store.save_features(
+                    pair=symbol, timeframe=timeframe, features=full_feature_vector, label=label,
+                )
+            except Exception as e:
+                log.debug(f"[Day 68] feature store save failed: {e}")
+        except Exception as e:
+            log.warning(f"[AnalysisAgent] Day 68 FeatureEngineering failed: {e}")
+            feature_vector_ctx = {"error": str(e)}
+
+        # ── Day 69: ML Model Prediction (Ensemble) ────────────────────
+        # Run the ML predictor on the feature vector. If models are trained,
+        # this produces a BUY/SELL/WAIT probability that adjusts the final
+        # confidence. If no models are trained yet, it returns NOT_READY
+        # and the agent falls back to rule-based logic.
+        ml_prediction_ctx: Dict[str, Any] = {}
+        try:
+            from ml.model_predictor import get_model_predictor
+            predictor = get_model_predictor()
+            ml_pred = predictor.predict(
+                features=full_feature_vector, pair=symbol, timeframe=timeframe,
+            )
+            ml_prediction_ctx = ml_pred
+
+            if ml_pred.get("prediction") != "NOT_READY" and ml_pred.get("models_used", 0) > 0:
+                ml_dir = ml_pred["prediction"]
+                ml_proba = ml_pred["probability"]
+                agreement = ml_pred.get("model_agreement", "0/0")
+
+                log.info(
+                    f"[AnalysisAgent] Day 69 ML ensemble: {ml_dir} "
+                    f"| prob={ml_proba:.2f} | agreement={agreement} | "
+                    f"models={ml_pred['models_used']}"
+                )
+        except Exception as e:
+            log.warning(f"[AnalysisAgent] Day 69 ML prediction failed: {e}")
+            ml_prediction_ctx = {"error": str(e)}
+
+        # ── Day 70: AI Brain Fusion Layer (Ensemble Engine) ───────────
+        # The culmination of Days 60-69. Fuses ALL intelligence layers:
+        #   - XGBoost + RandomForest + LSTM (Day 69 ML models)
+        #   - Rule Engine signal (Day 67 Confluence)
+        #   - MasterAnalyst LLM (Day 42)
+        # into a single institutional-grade decision with:
+        #   - Voting (4/4=FULL, 3/4=HALF, 2/4=WAIT, <2=NO_TRADE)
+        #   - Weighted confidence fusion (regime + performance adjusted)
+        #   - Conflict detection + abstain capability
+        #   - Position size multiplier
+        ensemble_ctx: Dict[str, Any] = {}
+        try:
+            from ml.ensemble import get_ensemble_engine
+            engine = get_ensemble_engine()
+
+            # Gather inputs for the ensemble
+            # Normalize STRONG_BUY/STRONG_SELL → BUY/SELL
+            _fs = final_signal
+            if "STRONG_BUY" in str(_fs):
+                _fs = "BUY"
+            elif "STRONG_SELL" in str(_fs):
+                _fs = "SELL"
+            rule_sig = _fs if _fs in ("BUY", "SELL") else "WAIT"
+            # Use master_confidence if available, otherwise use signal confidence, otherwise 50
+            rule_conf = float(master_ctx.get("master_confidence", 0) or 0)
+            if rule_conf <= 0:
+                rule_conf = float(signal_result.get("confidence", 0) or 0)
+            if rule_conf <= 0 and rule_sig in ("BUY", "SELL"):
+                rule_conf = 50.0  # minimum viable confidence
+            master_sig = (master_ctx.get("master_signal") or "WAIT") if isinstance(master_ctx, dict) else "WAIT"
+            master_conf = float(master_ctx.get("master_confidence", 50) or 50) if isinstance(master_ctx, dict) else 50.0
+            regime = (intermarket_ctx.get("macro_regime") or "UNKNOWN") if isinstance(intermarket_ctx, dict) else "UNKNOWN"
+
+            # Run the ensemble engine
+            ensemble_decision = engine.decide(
+                pair=symbol,
+                timeframe=timeframe,
+                ml_prediction=ml_prediction_ctx,
+                rule_signal=rule_sig,
+                rule_confidence=rule_conf,
+                master_signal=master_sig,
+                master_confidence=master_conf,
+                regime=regime,
+            )
+            ensemble_ctx = ensemble_decision.to_dict()
+
+            # ── Day 70 override: the ensemble is the FINAL decision ──
+            # Made more permissive: only block on ABSTAIN, not on WAIT.
+            # WAIT from ensemble now allows the original signal to proceed
+            # if it had decent confidence from MasterAnalyst.
+            if ensemble_decision.abstained:
+                log.warning(
+                    f"[AnalysisAgent] Day 70 Ensemble ABSTAINED: "
+                    f"{ensemble_decision.abstain_reason}"
+                )
+                final_signal = "NO TRADE"
+            elif ensemble_decision.decision == "WAIT":
+                # Don't automatically block — only block if confidence is very low
+                if ensemble_decision.confidence < 40:
+                    if final_signal in ("BUY", "SELL"):
+                        log.info(
+                            f"[AnalysisAgent] Day 70 Ensemble → WAIT "
+                            f"(conf {ensemble_decision.confidence:.0f}% < 40%)"
+                        )
+                        final_signal = "NO TRADE"
+                else:
+                    # WAIT with decent confidence — let the original signal pass
+                    log.info(
+                        f"[AnalysisAgent] Day 70 Ensemble WAIT but conf={ensemble_decision.confidence:.0f}% — "
+                        f"allowing original signal {final_signal}"
+                    )
+            elif ensemble_decision.decision in ("BUY", "SELL"):
+                # Ensemble confirms a trade — use its fused confidence
+                final_signal = ensemble_decision.decision
+                # Update master confidence to the ensemble's fused confidence
+                try:
+                    master_ctx["master_confidence"] = ensemble_decision.confidence
+                    master_ctx["ensemble_position_size"] = ensemble_decision.position_size
+                    master_ctx["ensemble_position_multiplier"] = ensemble_decision.position_multiplier
+                except Exception:
+                    pass
+                log.info(
+                    f"[AnalysisAgent] Day 70 Ensemble DECISION: {final_signal} "
+                    f"| conf={ensemble_decision.confidence:.0f}% | "
+                    f"agreement={ensemble_decision.agreement} | "
+                    f"position={ensemble_decision.position_size} "
+                    f"({'conflict!' if ensemble_decision.has_conflict else 'clean'})"
+                )
+        except Exception as e:
+            log.warning(f"[AnalysisAgent] Day 70 EnsembleEngine failed: {e}")
+            ensemble_ctx = {"error": str(e)}
+
+        # ── Day 71: Reinforcement Learning Agent (Final Wisdom Filter) ──
+        # The RL agent acts as the FINAL filter on top of the Day 70 Ensemble.
+        # It asks: "In similar past situations, did this type of trade work?"
+        # If the RL agent says HOLD (action 0), the trade is blocked — even if
+        # the ensemble agreed. This is the "knowing when NOT to trade" layer.
+        rl_ctx: Dict[str, Any] = {}
+        try:
+            from ml.rl_agent import get_rl_agent
+            import numpy as np
+
+            agent = get_rl_agent()
+            # Build state vector from the feature vector
+            state = np.array(list(full_feature_vector.values())[:160], dtype=np.float32)
+            # Pad to consistent size
+            if len(state) < 160:
+                state = np.pad(state, (0, 160 - len(state)))
+            elif len(state) > 160:
+                state = state[:160]
+            state = np.nan_to_num(state, nan=0.0, posinf=1.0, neginf=-1.0)
+
+            # Get ensemble signal for the RL agent to evaluate
+            ensemble_signal = ensemble_ctx.get("decision", "WAIT") if isinstance(ensemble_ctx, dict) else "WAIT"
+            ensemble_conf = ensemble_ctx.get("confidence", 0.0) if isinstance(ensemble_ctx, dict) else 0.0
+
+            rl_action = agent.predict(state, ensemble_signal=ensemble_signal, ensemble_confidence=ensemble_conf)
+            rl_ctx = rl_action.to_dict()
+
+            log.info(
+                f"[AnalysisAgent] Day 71 RL Agent: {rl_action.action_name} "
+                f"| source={rl_action.source} | conf={rl_action.confidence:.2f} | "
+                f"reason={rl_action.reason[:60]}"
+            )
+
+            # ── RL override logic ────────────────────────────────────
+            # The RL agent can VETO a trade — but only if confidence is very low (< 40%)
+            # Made more permissive: original blocked anything below 55%, now only below 40%.
+            if final_signal in ("BUY", "SELL") and rl_action.action_name == "HOLD":
+                # Check if the RL agent has a strong reason to veto
+                if ensemble_conf < 40:
+                    log.warning(
+                        f"[AnalysisAgent] Day 71 RL VETO: Ensemble said {final_signal} "
+                        f"but conf={ensemble_conf:.0f}% < 40% — {rl_action.reason[:80]}"
+                    )
+                    final_signal = "NO TRADE"
+                else:
+                    log.info(
+                        f"[AnalysisAgent] Day 71 RL suggests HOLD but conf={ensemble_conf:.0f}% — "
+                        f"allowing trade with caution"
+                    )
+            elif final_signal in ("BUY", "SELL") and rl_action.action_name == "CLOSE":
+                log.warning(
+                    f"[AnalysisAgent] Day 71 RL CLOSE: RL agent suggests closing position"
+                )
+                # Note: actual close happens in AITrader, not here — this is just a signal
+        except Exception as e:
+            log.warning(f"[AnalysisAgent] Day 71 RL Agent failed: {e}")
+            rl_ctx = {"error": str(e)}
+
+        # ── Day 73: Master Decision Engine (Central Brain) ────────────
+        # The culmination of Days 60-72. Collects ALL intelligence layer
+        # signals and fuses them into one final master decision with
+        # dynamic weights, conflict resolution, and validation.
+        master_decision_ctx: Dict[str, Any] = {}
+        try:
+            from core.master_decision import get_master_decision_engine
+            engine = get_master_decision_engine()
+
+            # Gather all 4 layer signals
+            _rule_sig = final_signal if final_signal in ("BUY", "SELL") else "WAIT"
+            _rule_conf = float(master_ctx.get("master_confidence", 0) or 0)
+            if _rule_conf <= 0:
+                _rule_conf = float(signal_result.get("confidence", 0) or 0)
+            if _rule_conf <= 0 and _rule_sig in ("BUY", "SELL"):
+                _rule_conf = 50.0
+
+            _ml_sig = "WAIT"
+            _ml_conf = 0.0
+            if isinstance(ml_prediction_ctx, dict) and ml_prediction_ctx.get("prediction") != "NOT_READY":
+                _ml_sig = ml_prediction_ctx.get("prediction", "WAIT")
+                _ml_conf = float(ml_prediction_ctx.get("probability", 0.5)) * 100
+
+            _rl_sig = rl_ctx.get("action_name", "HOLD") if isinstance(rl_ctx, dict) else "HOLD"
+            _rl_conf = float(rl_ctx.get("confidence", 50) or 50) * 100 if isinstance(rl_ctx, dict) else 50.0
+
+            _llm_sig = (master_ctx.get("master_signal") or "WAIT") if isinstance(master_ctx, dict) else "WAIT"
+            _llm_conf = float(master_ctx.get("master_confidence", 0) or 0) if isinstance(master_ctx, dict) else 0.0
+
+            master_decision = engine.decide(
+                pair=symbol,
+                timeframe=timeframe,
+                rule_signal=_rule_sig,
+                rule_confidence=_rule_conf,
+                ml_signal=_ml_sig,
+                ml_confidence=_ml_conf,
+                rl_signal=_rl_sig,
+                rl_confidence=_rl_conf,
+                llm_signal=_llm_sig,
+                llm_confidence=_llm_conf,
+                rule_reasoning=str(signal_result.get("reasons", ""))[:100],
+                ml_reasoning=str(ml_prediction_ctx.get("important_features", ""))[:100] if isinstance(ml_prediction_ctx, dict) else "",
+                rl_reasoning=str(rl_ctx.get("reason", ""))[:100] if isinstance(rl_ctx, dict) else "",
+                llm_reasoning=str(master_ctx.get("master_story", ""))[:100] if isinstance(master_ctx, dict) else "",
+            )
+            master_decision_ctx = master_decision.to_dict()
+
+            # Day 73 override: the master decision is the FINAL signal
+            if master_decision.final_signal in ("BUY", "SELL"):
+                final_signal = master_decision.final_signal
+                try:
+                    master_ctx["master_confidence"] = master_decision.master_confidence
+                    master_ctx["master_position_size"] = master_decision.position_size
+                    master_ctx["master_position_multiplier"] = master_decision.position_multiplier
+                except Exception:
+                    pass
+                log.info(
+                    f"[AnalysisAgent] Day 73 Master Decision: {final_signal} "
+                    f"| conf={master_decision.master_confidence:.0f}% | "
+                    f"agreement={master_decision.agreement} | "
+                    f"position={master_decision.position_size}"
+                    f"{' | CONFLICT' if master_decision.has_conflict else ''}"
+                    f"{' | OVERRIDE: ' + master_decision.override_reason if master_decision.override_reason else ''}"
+                )
+            elif master_decision.final_signal == "WAIT" and final_signal in ("BUY", "SELL"):
+                log.info(
+                    f"[AnalysisAgent] Day 73 Master Decision → WAIT "
+                    f"(agreement {master_decision.agreement}, conf {master_decision.master_confidence:.0f}%)"
+                )
+                if master_decision.override_reason:
+                    final_signal = "NO TRADE"
+        except Exception as e:
+            log.warning(f"[AnalysisAgent] Day 73 MasterDecisionEngine failed: {e}")
+            master_decision_ctx = {"error": str(e)}
+
         log.info(
             f"[AnalysisAgent] Complete — "
             f"Session: {session_ctx['current_session']} ({session_ctx['gmt_time']}) | "
@@ -377,5 +833,19 @@ class AnalysisAgent:
             # Master
             "master":            master_result,
             "master_ctx":        master_ctx,
+            # Day 66 — News Intelligence
+            "news_intelligence": news_intel_ctx,
+            # Day 67 — Confluence Engine
+            "confluence":        confluence_ctx,
+            # Day 68 — Feature Engineering
+            "feature_vector":    feature_vector_ctx,
+            # Day 69 — ML Prediction
+            "ml_prediction":     ml_prediction_ctx,
+            # Day 70 — Ensemble Brain Fusion
+            "ensemble":          ensemble_ctx,
+            # Day 71 — RL Agent (Final Wisdom Filter)
+            "rl_agent":          rl_ctx,
+            # Day 73 — Master Decision Engine
+            "master_decision":   master_decision_ctx,
             "final_signal":      final_signal,
         }

@@ -328,6 +328,19 @@ class AutonomousRiskManager:
             f"RR: 1:{rr_ratio}"
         )
 
+        # Day 37 fix: register the new position with ExposureManager so that
+        # subsequent check_new_position() calls see it. Previously
+        # open_position() was never called — _open_positions stayed empty
+        # and the correlation/currency-exposure gates were effectively inert.
+        try:
+            self.exposure_manager.open_position(
+                symbol=symbol,
+                direction=signal,
+                lot=lot,
+            )
+        except Exception as e:
+            log.warning(f"[AutonomousRisk] exposure_manager.open_position failed: {e}")
+
         self._save_state()
         return decision
 

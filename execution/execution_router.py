@@ -75,9 +75,8 @@ class ExecutionRouter:
             )
             if not self._mt5_conn.connect():
                 raise RuntimeError(
-                    "MT5 demo connection ব্যর্থ — credentials ও MT5 terminal "
-                    "চালু আছে কিনা চেক করো। Fallback হিসেবে EXECUTION_MODE=paper "
-                    "করতে পারো .env-এ।"
+                    "MT5 demo connection failed — check credentials and MT5 terminal "
+                    "is running. EXECUTION_MODE=mt5_demo requires MT5 terminal."
                 )
             self._account_manager = AccountManager(self._mt5_conn)
             self._health_monitor = HealthMonitor(

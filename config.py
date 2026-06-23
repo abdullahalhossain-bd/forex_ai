@@ -27,17 +27,43 @@ for _d in (LOG_DIR, DATA_DIR, MODEL_DIR, DB_PATH.parent):
 PROJECT_NAME = "Autonomous Forex AI Trader"
 
 # ── Capital & Risk Management ──────────────────────────────────
+# Day 37+ professional tuning — calibrated for 28-pair universe.
 INITIAL_BALANCE = 10000
 INITIAL_CAPITAL = INITIAL_BALANCE  # Alias for compatibility
-RISK_PER_TRADE = 0.01
-MAX_DAILY_LOSS = 0.03
-MAX_OPEN_TRADES = 3
-MAX_POSITIONS = 5  # Maximum concurrent positions portfolio-wide
+RISK_PER_TRADE = 0.01              # 1% per trade (professional standard)
+MAX_DAILY_LOSS = 0.03              # 3% daily loss limit
+MAX_OPEN_TRADES = 5                # 5 concurrent positions (was 3) — better for 28 pairs
+MAX_POSITIONS = 7                  # 7 portfolio-wide (was 5) — slight headroom
+MAX_RISK_PER_PAIR = 0.02           # NEW: max 2% risk on a single pair
 
 # ── Market & Data Settings ─────────────────────────────────────
 MARKET = "forex"
 DATA_SOURCE = "yfinance"
-SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY"]
+
+# Complete pair universe: 7 majors + 21 minors/crosses + 2 metals = 30 pairs.
+# Per user request — agent trades the FULL forex universe + precious metals.
+# Each pair gets its own AITrader instance in AutonomousTraderSystem.
+# (MAX_OPEN_TRADES = 5 still applies, so only 5 concurrent positions max.)
+SYMBOLS = [
+    # ── MAJORS (7) — USD on one side ──
+    "EURUSD", "GBPUSD", "USDJPY", "USDCHF",
+    "USDCAD", "AUDUSD", "NZDUSD",
+    # ── MINORS / CROSSES (21) ──
+    # EUR crosses (6)
+    "EURGBP", "EURJPY", "EURCHF", "EURAUD",
+    "EURCAD", "EURNZD",
+    # GBP crosses (5)
+    "GBPJPY", "GBPCHF", "GBPAUD", "GBPCAD", "GBPNZD",
+    # AUD crosses (4)
+    "AUDJPY", "AUDCHF", "AUDCAD", "AUDNZD",
+    # NZD crosses (3)
+    "NZDJPY", "NZDCHF", "NZDCAD",
+    # CAD/CHF crosses (3)
+    "CADJPY", "CADCHF", "CHFJPY",
+    # ── METALS / COMMODITIES (2) ──
+    "XAUUSD",  # Gold
+    "XAGUSD",  # Silver
+]
 
 # ── Timeframes ─────────────────────────────────────────────────
 DEFAULT_TIMEFRAME = "15m"
@@ -61,7 +87,7 @@ LOG_FILE = str(LOG_DIR / "trader.log")
 
 # ── System / Operational Loops ─────────────────────────────────
 PAPER_BALANCE = 10000
-LOOP_INTERVAL_SEC = 60
+LOOP_INTERVAL_SEC = 90             # 90s (was 60) — 28 pairs need more analysis time
 BACKUP_INTERVAL_MIN = 30
 RECOVERY_COOLDOWN_MIN = 5
 
@@ -73,8 +99,10 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+# Anthropic + OpenRouter intentionally disabled — MasterAnalyst now uses
+# the same Groq/Gemini chain as AIAnalyst (per user request, free-tier only).
+# ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+# OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 
 # ── Execution Mode ─────────────────────────────────────────────
@@ -242,8 +270,9 @@ class Config:
     GROQ_MODEL = GROQ_MODEL
     GEMINI_API_KEY = GEMINI_API_KEY
     GEMINI_MODEL = GEMINI_MODEL
-    ANTHROPIC_API_KEY = ANTHROPIC_API_KEY
-    OPENROUTER_API_KEY = OPENROUTER_API_KEY
+    # Anthropic + OpenRouter disabled (per user request — free-tier only)
+    # ANTHROPIC_API_KEY = ANTHROPIC_API_KEY
+    # OPENROUTER_API_KEY = OPENROUTER_API_KEY
 
     # External APIs
     ALPHA_VANTAGE_API_KEY = ALPHA_VANTAGE_API_KEY
@@ -261,12 +290,8 @@ class Config:
     LOG_MAX_SIZE = LOG_MAX_SIZE
     LOG_BACKUP_COUNT = LOG_BACKUP_COUNT
 
-    # Forex pairs for scanner/data updater
-    FOREX_PAIRS = [
-        'EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF',
-        'AUDUSD', 'USDCAD', 'NZDUSD',
-        'EURGBP', 'EURJPY', 'GBPJPY'
-    ]
+    # Forex pairs for scanner/data updater — full 28-pair universe
+    FOREX_PAIRS = SYMBOLS  # Reuse the SYMBOLS list (28 pairs)
 
     # Data update configuration
     DATA_UPDATE_TIME = "06:00"

@@ -13,6 +13,7 @@ import sqlite3
 import pandas as pd
 import json
 import os
+import numpy as np
 from datetime import datetime
 from utils.logger import get_logger
 
@@ -20,6 +21,45 @@ log = get_logger(__name__)
 
 DB_PATH = "database/trader.db"
 os.makedirs("database", exist_ok=True)
+
+
+# ── JSON encoder that handles numpy types ───────────────────────────
+# pandas/numpy produce np.int64, np.float64, np.bool_ etc. which the
+# standard json.dumps() can't serialize.  This encoder converts them
+# to native Python types so save_analysis() / save_trade_open() never
+# crash with "Object of type bool is not JSON serializable".
+class _NumpySafeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, (np.floating,)):
+            return float(obj)
+        if isinstance(obj, (np.bool_,)):
+            return bool(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, (pd.Timestamp, datetime)):
+            return str(obj)
+        # pd.isna() crashes on dicts/lists — only call on scalars.
+        if isinstance(obj, (int, float, str)) or obj is None:
+            try:
+                if pd.isna(obj):
+                    return None
+            except Exception:
+                pass
+        return super().default(obj)
+
+
+def _safe_json_dumps(obj):
+    """json.dumps that never crashes — converts numpy types + falls back to str."""
+    try:
+        return json.dumps(obj, cls=_NumpySafeEncoder, default=str)
+    except Exception:
+        # Last resort: stringify everything we can't serialize
+        try:
+            return json.dumps(str(obj))
+        except Exception:
+            return "{}"
 
 
 class TraderDB:
@@ -215,7 +255,7 @@ class TraderDB:
                 datetime.now().isoformat(),
                 symbol, timeframe,
                 bias_score, bias_label,
-                json.dumps(context),
+                _safe_json_dumps(context),
             ))
         log.info(f"Analysis saved: {symbol} bias={bias_score} ({bias_label})")
 
@@ -241,7 +281,7 @@ class TraderDB:
                 trade.get("confidence"), trade["open_time"],
                 trade.get("pattern"), trade.get("regime"),
                 trade.get("trend"), trade.get("rsi"), trade.get("session"),
-                json.dumps(trade.get("context", {})),
+                _safe_json_dumps(trade.get("context", {})),
             ))
             trade_id = cur.lastrowid
         log.info(f"Trade OPEN saved: #{trade_id} {trade['pair']} {trade['type']} @ {trade['entry']}")

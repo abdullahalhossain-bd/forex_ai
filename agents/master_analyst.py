@@ -18,22 +18,72 @@ import os
 import re
 from datetime import datetime
 
+from dotenv import load_dotenv
 from utils.logger import get_logger
 
+load_dotenv()
 log = get_logger("master_analyst")
 
-try:
-    import anthropic
-    _client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
-    LLM_AVAILABLE = True
-except Exception:
-    LLM_AVAILABLE = False
-    _client = None
-    log.warning("[MasterAnalyst] anthropic package not found or API key missing — LLM disabled")
-
-# Valid Anthropic model names — use claude-3-5-sonnet as the default
-MODEL   = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+# ── LLM client initialization (Day 37+ runtime unification) ──────────
+# Per user request, Anthropic + OpenRouter are no longer used.
+# MasterAnalyst now uses Groq (primary) + Gemini (fallback) — the same
+# providers that AIAnalyst uses — so the system runs on free-tier keys only.
+# Day 72+: Multi-key rotation via LLMKeyManager (unlimited keys per provider).
+LLM_AVAILABLE = False
+_provider = "none"
+_groq_client = None
+_gemini_client = None
+_key_manager = None
+MODEL = ""
 MAX_TOK = 1500
+
+try:
+    from core.llm_key_manager import get_llm_key_manager
+    _key_manager = get_llm_key_manager()
+    _groq_client = _key_manager.get_groq_client()
+    if _groq_client is not None:
+        MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        LLM_AVAILABLE = True
+        _provider = "groq"
+        log.info(f"[MasterAnalyst] Groq client initialized | model={MODEL}")
+    if not LLM_AVAILABLE:
+        _gemini_client = _key_manager.get_gemini_client()
+        if _gemini_client is not None:
+            MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+            LLM_AVAILABLE = True
+            _provider = "gemini"
+            log.info(f"[MasterAnalyst] Gemini client initialized (fallback) | model={MODEL}")
+except Exception as e:
+    log.warning(f"[MasterAnalyst] LLMKeyManager init failed: {e} — trying single-key")
+    groq_key = os.getenv("GROQ_API_KEY_1") or os.getenv("GROQ_API_KEY", "")
+    if groq_key:
+        try:
+            from groq import Groq
+            _groq_client = Groq(api_key=groq_key)
+            MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+            LLM_AVAILABLE = True
+            _provider = "groq"
+            log.info(f"[MasterAnalyst] Groq client initialized (single-key) | model={MODEL}")
+        except Exception as e2:
+            log.warning(f"[MasterAnalyst] Groq init failed: {e2}")
+    if not LLM_AVAILABLE:
+        gemini_key = os.getenv("GEMINI_API_KEY_1") or os.getenv("GEMINI_API_KEY", "")
+        if gemini_key:
+            try:
+                from google import genai as google_genai
+                _gemini_client = google_genai.Client(api_key=gemini_key)
+                MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+                LLM_AVAILABLE = True
+                _provider = "gemini"
+                log.info(f"[MasterAnalyst] Gemini client initialized (single-key fallback) | model={MODEL}")
+            except Exception as e2:
+                log.warning(f"[MasterAnalyst] Gemini init failed: {e2}")
+
+if not LLM_AVAILABLE:
+    log.warning(
+        "[MasterAnalyst] No LLM available (Groq/Gemini keys missing). "
+        "MasterAnalyst will fall back to rule-engine signal."
+    )
 
 
 class MasterAnalyst:
@@ -46,47 +96,72 @@ class MasterAnalyst:
     isolated market.
     """
 
-    _SYSTEM = """You are an elite professional forex trader with 20 years of experience,
-fluent in Smart Money Concepts (SMC) — order blocks, FVGs, liquidity sweeps, BOS/CHoCH —
-deeply aware of how forex market sessions behave differently, AND a macro/intermarket
-analyst who understands how DXY, Gold, Oil, Bond Yields, S&P500, and VIX drive currency moves.
+    _SYSTEM = """You are an elite professional forex trader with 20+ years of institutional experience.
+You have deep expertise in Smart Money Concepts (SMC), price action, intermarket analysis,
+and behavioral market microstructure. You think like a hedge fund portfolio manager —
+you protect capital first, you wait patiently for A+ setups, and you NEVER force a trade.
 
-Your job: synthesize ALL market intelligence into ONE coherent trade decision.
+# YOUR MINDSET
+- Capital preservation is rule #1. A bad day with no trades is better than a bad day with trades.
+- Patience beats aggression. If the setup is not crystal clear, WAIT.
+- You trade CONFLUENCE, not single signals. 3+ aligned reasons to enter > 1 strong signal.
+- You respect market sessions, macroeconomic context, and intermarket correlations.
+- You think in probabilities, not certainties. Every trade has risk — name it.
 
-SESSION RULES (critical — follow these):
+# ANALYSIS FRAMEWORK (use this mental checklist)
+Before deciding BUY/SELL/WAIT, walk through these layers IN ORDER:
+
+1. **Session & Time-of-Day**: Where are we in the 24h cycle? London/NY overlap = premium.
+   Asian session = range. Dead zone = NO TRADE.
+2. **Macro Regime**: Risk-on or risk-off? DXY/Gold/VIX alignment with the pair?
+   If macro OPPOSES the technical signal strongly, lower confidence or WAIT.
+3. **Higher Timeframe Bias**: Daily/4H trend direction. Don't fight the HTF trend
+   unless there's a clear SMC reversal (CHoCH + BOS + displacement).
+4. **Market Structure (SMC)**: BOS confirmed? CHoCH? Order block tap? FVG fill?
+   Liquidity sweep + rejection? These are institutional footprints — follow them.
+5. **Pattern & Fibonacci**: Confluence at key fib level (50%/61.8%/78.6%)?
+   Pattern direction matches HTF bias?
+6. **Support/Resistance**: Price at premium/discount zone? Near pivot?
+   Equal highs/lows (liquidity pools) nearby?
+7. **Momentum**: RSI divergence? MACD cross? Overbought/oversold extreme?
+8. **Sentiment & News**: Retail positioning contrarian signal? High-impact news within 30min?
+9. **History**: How did similar setups perform in the last 20 trades on this pair?
+10. **Self-Critique**: What am I missing? What's the bear case for my bull trade (or vice versa)?
+
+# SESSION RULES (critical — follow strictly)
 1. DEAD_ZONE or session_trade_allowed=false → return WAIT immediately, no exceptions.
-2. LONDON_NY_OVERLAP → only A+ setups (fusion_score >= 85, full SMC confluence).
-3. LONDON → LONDON_BREAKOUT strategy. Check Asian range sweep. BOS required.
+2. LONDON_NY_OVERLAP → only A+ setups (3+ confluences, full SMC alignment).
+3. LONDON → LONDON_BREAKOUT strategy. Look for Asian range sweep + BOS confirmation.
 4. NEW_YORK → TREND_CONTINUATION from London. Don't reverse without strong SMC.
-5. TOKYO/SYDNEY → RANGE_TRADING only. Avoid breakout entries.
-6. london_open_window=true → wait for liquidity sweep then enter on BOS confirmation.
-7. If pair_session_label is POOR or AVOID for this session → lower confidence by 15%.
-8. in_session_transition=true → extra caution. Note the transition_alert in reasoning.
+5. TOKYO/SYDNEY → RANGE_TRADING only. Fade extremes, avoid breakout entries.
+6. london_open_window=true → wait for liquidity sweep THEN enter on BOS, never before.
+7. If pair_session_label is POOR or AVOID → lower confidence by 15% or WAIT.
+8. in_session_transition=true → extra caution. Reduce position size or WAIT.
 
-GLOBAL MACRO RULES (Day 65 — critical, check global_market_intelligence block):
-9. Forex is NOT an isolated market. Check macro_pair_bias and macro_regime before confirming
-   any technical signal. If macro_pair_bias directly OPPOSES the technical/SMC signal AND
-   cross_asset_confirmed=true, lower confidence significantly or prefer WAIT.
-10. If macro_pair_bias AGREES with the technical/SMC signal, treat this as strong confluence
-    (mention it explicitly in market_story and reasoning) — this is the highest-quality setup
-    described as "Macro + SMC Fusion" in your playbook.
-11. If event_risk_elevated=true (FOMC/NFP/CPI nearby), reduce confidence by roughly
-    event_risk_penalty points and mention the event risk in self_critique.
-12. If trading_mode is "DEFENSIVE" (VIX fear elevated/extreme), only take high-conviction
-    setups and say so in reasoning; if "CAUTIOUS", reduce confidence modestly.
-13. If cross_asset_confirmed=false, treat the macro signal as weak — do not let it dominate
-    over strong technical/SMC evidence either direction.
+# GLOBAL MACRO RULES (Day 65)
+9. Forex is NOT isolated. Check macro_pair_bias and macro_regime FIRST.
+10. If macro_pair_bias OPPOSES technical signal AND cross_asset_confirmed=true → WAIT or low confidence.
+11. If macro_pair_bias AGREES with technical signal → STRONG confluence ("Macro + SMC Fusion").
+    This is the highest-quality setup — mention explicitly in market_story.
+12. event_risk_elevated=true (FOMC/NFP/CPI within 60min) → reduce confidence by event_risk_penalty.
+13. trading_mode=DEFENSIVE (VIX elevated) → only A+ setups. CAUTIOUS → reduce confidence 10%.
 
-GENERAL RULES:
-14. Do NOT force a trade. If conditions are unclear → WAIT.
-15. Consider ALL inputs: technical, SMC, sentiment, news, session, macro/intermarket, history.
-16. Self-critique: what could go wrong?
+# CONFIDENCE CALIBRATION (be honest — fake confidence loses money)
+- 85-100: A+ setup. 4+ confluences aligned. HTF + SMC + macro + session all agree.
+- 70-84:  A setup. 3+ confluences. One minor concern noted in self_critique.
+- 55-69:  B setup. 2 confluences. Smaller position size, tighter SL.
+- 0-54:   Not tradeable. Return WAIT with explicit reason.
 
-Output ONLY valid JSON, no markdown, no extra text.
+# TRADE PLAN REQUIREMENTS
+- Entry: precise price level (not zone), with reasoning.
+- SL: behind structure (swing low/high, order block, FVG edge) — never arbitrary pips.
+- TP1: 1R minimum, at first liquidity pool / S/R / fib extension.
+- TP2: 2R+ at next liquidity target. Partial close at TP1.
+- Reasoning: 1-2 sentences naming the TOP 2-3 confluences (not all of them).
 
-JSON schema:
+# OUTPUT — JSON ONLY, no markdown, no extra text:
 {
-  "market_story": "2-4 sentence narrative including session AND macro context",
+  "market_story": "3-5 sentence narrative: session context + macro regime + key structural observation",
   "key_levels": [float, float, float],
   "trade_plan": {
     "signal": "BUY" | "SELL" | "WAIT",
@@ -95,11 +170,11 @@ JSON schema:
     "tp1": float | null,
     "tp2": float | null,
     "confidence": integer (0-100),
-    "reasoning": "1-2 sentence rationale mentioning session and macro alignment"
+    "reasoning": "Top 2-3 confluences that justify this trade (or why WAIT)"
   },
-  "risks": ["risk 1", "risk 2"],
-  "self_critique": "What could go wrong or what am I missing?",
-  "no_trade_reason": "Only if signal is WAIT"
+  "risks": ["specific risk 1", "specific risk 2"],
+  "self_critique": "What could go wrong? What am I missing? Be honest.",
+  "no_trade_reason": "Only if signal is WAIT — explicit reason"
 }"""
 
     def analyze(
@@ -466,6 +541,9 @@ JSON schema:
         return json.dumps(ctx, indent=2, default=str)
 
     def _call_llm(self, context: str) -> str:
+        """Call LLM with Groq (primary) → Gemini (fallback) chain.
+        Multi-key rotation: if one key fails, automatically tries next.
+        Anthropic + OpenRouter are intentionally NOT used per user request."""
         user_prompt = (
             "Here is the complete market intelligence package (session-aware AND "
             "macro/intermarket-aware) for analysis:\n\n"
@@ -475,13 +553,71 @@ JSON schema:
             "Provide your professional trade decision as JSON."
         )
 
-        response = _client.messages.create(
-            model      = MODEL,
-            max_tokens = MAX_TOK,
-            system     = self._SYSTEM,
-            messages   = [{"role": "user", "content": user_prompt}],
-        )
-        return response.content[0].text.strip()
+        import time as _time
+
+        # Primary: Groq (with multi-key retry)
+        max_retries = 3
+        for attempt in range(max_retries):
+            client = _groq_client
+            if client is None and _key_manager is not None:
+                client = _key_manager.get_groq_client()
+            if client is None:
+                break
+            try:
+                resp = client.chat.completions.create(
+                    model=MODEL,
+                    max_tokens=MAX_TOK,
+                    temperature=0.2,
+                    messages=[
+                        {"role": "system", "content": self._SYSTEM},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                )
+                if _key_manager is not None:
+                    _key_manager.mark_groq_success()
+                return resp.choices[0].message.content.strip()
+            except Exception as e:
+                error_str = str(e)
+                rate_limited = "429" in error_str or "rate" in error_str.lower()
+                log.warning(f"[MasterAnalyst] Groq call failed (attempt {attempt+1}): {error_str[:100]}")
+                if _key_manager is not None:
+                    _key_manager.mark_groq_failure(error_str, rate_limited)
+                    # Get fresh client with different key
+                    import sys
+                    current_module = sys.modules[__name__]
+                    current_module._groq_client = _key_manager.get_groq_client()
+                if attempt < max_retries - 1:
+                    _time.sleep(1)
+
+        # Fallback: Gemini (with multi-key retry)
+        for attempt in range(max_retries):
+            client = _gemini_client
+            if client is None and _key_manager is not None:
+                client = _key_manager.get_gemini_client()
+            if client is None:
+                break
+            try:
+                full_prompt = f"{self._SYSTEM}\n\n{user_prompt}"
+                resp = client.models.generate_content(
+                    model=MODEL,
+                    contents=full_prompt,
+                )
+                if _key_manager is not None:
+                    _key_manager.mark_gemini_success()
+                return resp.text.strip()
+            except Exception as e:
+                error_str = str(e)
+                rate_limited = "429" in error_str or "rate" in error_str.lower()
+                log.warning(f"[MasterAnalyst] Gemini call failed (attempt {attempt+1}): {error_str[:100]}")
+                if _key_manager is not None:
+                    _key_manager.mark_gemini_failure(error_str, rate_limited)
+                    import sys
+                    current_module = sys.modules[__name__]
+                    current_module._gemini_client = _key_manager.get_gemini_client()
+                if attempt < max_retries - 1:
+                    _time.sleep(1)
+
+        raise RuntimeError("[MasterAnalyst] No LLM client available (all keys failed)")
 
     def _parse_response(self, raw: str) -> dict:
         text = raw.strip()

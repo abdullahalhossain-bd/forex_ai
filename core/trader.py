@@ -24,6 +24,13 @@
 #     trade history yet (total_trades == 0), `result["memory_context"] =
 #     vec_ctx` further down raised UnboundLocalError and killed the whole
 #     cycle for every symbol in the same run.
+#
+#   - Day 37+ runtime-unified hotfix (this revision): `_start_telegram_commands`
+#     had a body indented at the SAME level as its `def` line (instead of one
+#     level deeper), which is a syntax error in Python and also caused
+#     `_notify_warning` to be swallowed as part of that broken block. Fixed
+#     indentation restores both as proper, separate methods of
+#     AutonomousTraderSystem.
 
 import asyncio
 import json
@@ -32,6 +39,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional
 
 from agents.analysis_agent import AnalysisAgent
 from agents.decision_agent import DecisionAgent
@@ -52,6 +60,24 @@ from scanner.correlation_filter import CorrelationFilter
 from utils.logger import get_logger
 from utils.session import SessionAnalyzer
 from visualization.chart import ChartEngine
+
+# ── Runtime infrastructure (Day 37+ runtime unification) ─────────────
+# These imports are soft — if the new runtime modules aren't available
+# (e.g. during a partial deployment), the trader still works exactly as
+# before. When they ARE available, the trader publishes events, records
+# metrics, and accepts a service registry for dependency injection.
+try:
+    from core.event_bus import EventBus, get_bus
+    from core.runtime_metrics import RuntimeMetrics, get_metrics
+    from core.service_registry import ServiceRegistry
+    _RUNTIME_INFRA_AVAILABLE = True
+except Exception:
+    _RUNTIME_INFRA_AVAILABLE = False
+    EventBus = None
+    get_bus = None
+    RuntimeMetrics = None
+    get_metrics = None
+    ServiceRegistry = None
 
 try:
     import alerts.telegram_bot as telegram_module
@@ -76,7 +102,7 @@ log = get_logger("ai_trader")
 
 class AITrader:
 
-    VERSION = "Week3-Day21"
+    VERSION = "Week3-Day37-RuntimeUnified"
 
     def __init__(
         self,
@@ -90,6 +116,7 @@ class AITrader:
         approval_mode: int = 3,
         circuit_breaker: CircuitBreaker = None,
         approval: ApprovalMode = None,
+        registry: "Optional[ServiceRegistry]" = None,
     ):
         self.balance = balance
         self.symbol = self._clean_symbol(symbol)
@@ -98,35 +125,309 @@ class AITrader:
         self.execution_mode = (execution_mode or EXECUTION_MODE).lower()
         self._last_decision_candle = None
 
+        # ── Runtime infrastructure (Day 37+ unification) ──────────────
+        # The registry is optional — when supplied, AITrader pulls shared
+        # singletons from it (TradeMemory, CircuitBreaker, etc.) instead of
+        # constructing fresh copies, and publishes events / metrics to the
+        # central bus. When absent, the trader behaves exactly as before.
+        self._registry = registry
+        self._bus = get_bus() if _RUNTIME_INFRA_AVAILABLE else None
+        self._metrics = get_metrics() if _RUNTIME_INFRA_AVAILABLE else None
+
         self._market = MarketAgent(self.symbol, timeframe)
         self._analysis = AnalysisAgent()
         self._decision = DecisionAgent()
         self._risk = RiskEngine(balance=balance, symbol=self.symbol)
         self._perm = TradePermission()
         self._learn = LearningAgent()
-        self._memory = TradeMemory(seed_rules=seed_rules)
+        # Prefer the registry's shared TradeMemory if available (so all
+        # AITraders for different symbols share the same vector store).
+        if registry is not None:
+            shared_mem = registry.try_resolve("trade_memory")
+            if shared_mem is not None:
+                self._memory = shared_mem
+            else:
+                self._memory = TradeMemory(seed_rules=seed_rules)
+        else:
+            self._memory = TradeMemory(seed_rules=seed_rules)
         self._learning = LearningEngine()
-        self._db = TraderDB()
+        # Same for TraderDB — share the registry's connection if available.
+        if registry is not None:
+            shared_db = registry.try_resolve("db")
+            self._db = shared_db if shared_db is not None else TraderDB()
+        else:
+            self._db = TraderDB()
         self._paper = PaperTrader(starting_balance=paper_balance, db=self._db)
-        self._mistake_analyzer = AdvancedMistakeAnalyzer() if AdvancedMistakeAnalyzer else None
+        # Prefer the registry's shared mistake_analyzer.
+        if registry is not None:
+            shared_ma = registry.try_resolve("mistake_analyzer")
+            self._mistake_analyzer = shared_ma if shared_ma is not None else (
+                AdvancedMistakeAnalyzer() if AdvancedMistakeAnalyzer else None
+            )
+        else:
+            self._mistake_analyzer = AdvancedMistakeAnalyzer() if AdvancedMistakeAnalyzer else None
 
         # Day 37 wiring — execution router shares THIS instance's PaperTrader
         # so paper-mode balance never drifts between router and trader.
-        self._router = ExecutionRouter(
-            mode=self.execution_mode, db=self._db, paper_trader=self._paper
-        )
+        # Prefer the registry's shared router if available.
+        if registry is not None:
+            shared_router = registry.try_resolve("execution_router")
+            self._router = shared_router if shared_router is not None else ExecutionRouter(
+                mode=self.execution_mode, db=self._db, paper_trader=self._paper
+            )
+        else:
+            self._router = ExecutionRouter(
+                mode=self.execution_mode, db=self._db, paper_trader=self._paper
+            )
         # Circuit breaker / approval mode are global state (single JSON file
         # each) — accept a shared instance from AutonomousTraderSystem, or
         # make a private one if this AITrader is used standalone.
         self._circuit_breaker = circuit_breaker or CircuitBreaker(balance=balance)
         self._approval = approval or ApprovalMode(mode=approval_mode)
-        self._corr_filter = CorrelationFilter()
+        # Correlation filter — prefer shared instance from registry.
+        if registry is not None:
+            shared_cf = registry.try_resolve("correlation_filter")
+            self._corr_filter = shared_cf if shared_cf is not None else CorrelationFilter()
+        else:
+            self._corr_filter = CorrelationFilter()
+
+        # ── Day 76 — Smart Capital Allocation Engine ──────────────────
+        # The PositionSizer fuses Kelly × Volatility × Confidence ×
+        # Correlation × Drawdown × Loss-streak into a single lot override
+        # that runs AFTER RiskEngine picks SL/TP/entry.  When absent
+        # (e.g. standalone AITrader without registry), the trader simply
+        # uses RiskEngine's lot as before — fully backward-compatible.
+        self._position_sizer = None
+        self._live_risk_manager = None
+        self._drawdown_monitor = None
+        self._kill_switch = None
+        if registry is not None:
+            self._position_sizer = registry.try_resolve("position_sizer")
+            self._live_risk_manager = registry.try_resolve("live_risk_manager")
+            self._drawdown_monitor = registry.try_resolve("drawdown_monitor")
+            self._kill_switch = registry.try_resolve("kill_switch")
 
         log.info(
             f"AITrader {self.VERSION} | {self.symbol} {timeframe} | "
             f"Mode: {self.execution_mode.upper()} | Approval: {self._approval.mode_name} | "
-            f"Risk Balance: ${balance} | Paper Balance: ${self._paper.balance}"
+            f"Risk Balance: ${balance} | Paper Balance: ${self._paper.balance} | "
+            f"Registry: {'yes' if registry else 'no'} | "
+            f"Day76 Sizer: {'on' if self._position_sizer else 'off'}"
         )
+
+    # ── Event / metrics helpers (Day 37+ runtime unification) ────────
+    def _publish(self, channel: str, payload: dict) -> None:
+        """Publish an event to the bus, if available."""
+        if self._bus is not None:
+            try:
+                self._bus.publish(channel, payload, source=f"aitrader:{self.symbol}")
+            except Exception as e:
+                log.debug(f"event publish failed on {channel}: {e}")
+
+    def _stage(self, name: str):
+        """Return a timer context manager from runtime metrics, or a no-op."""
+        if self._metrics is not None:
+            return self._metrics.timer(name)
+        # Fallback no-op context manager
+        import contextlib
+
+        class _NoOp:
+            def __enter__(self):
+                return None
+            def __exit__(self, *a):
+                return False
+        return _NoOp()
+
+    def _record_error(self, channel: str, reason: str) -> None:
+        if self._metrics is not None:
+            try:
+                self._metrics.record_error(channel=channel)
+            except Exception:
+                pass
+        self._publish("system.error", {"channel": channel, "symbol": self.symbol, "reason": reason})
+
+    # ── Day 76 — Smart Capital Allocation override ────────────────────
+    def _apply_advanced_sizing(
+        self,
+        risk_out: dict,
+        dec_out: dict,
+        market_out: dict,
+        analysis_out: dict,
+    ) -> dict:
+        """Run the master PositionSizer on top of RiskEngine's base lot.
+
+        Returns a (possibly modified) `risk_out` dict.  When the sizer is
+        not wired or RiskEngine already rejected the trade, the dict is
+        returned unchanged.  When the sizer rejects (Kelly negative,
+        volatility too high, confidence below floor, portfolio heat
+        exceeded, loss streak too long, etc.) the lot is set to 0 and
+        reject_reason is filled.  When the sizer approves, lot/risk_usd/
+        risk_pc are overridden with the sizer's output.
+
+        The full breakdown (kelly/volatility/confidence/correlation/
+        drawdown/streak multipliers + explanation lines) is stored under
+        risk_out["position_sizing"] for downstream consumers (journal,
+        telegram alerts, dashboard, audit_trail).
+        """
+        # Pass-through if no sizer, or RiskEngine already rejected.
+        if self._position_sizer is None or not risk_out.get("approved"):
+            return risk_out
+
+        try:
+            ind = market_out.get("ind_ctx", {}) or {}
+            regime = market_out.get("regime", {}) or {}
+            direction = risk_out.get("signal") or dec_out.get("decision") or "WAIT"
+            confidence = float(dec_out.get("confidence", 0) or 0)
+
+            # Pip value per lot — RiskEngine uses get_pip_value_usd(symbol).
+            # We approximate with the same lookup so the sizer stays in sync.
+            try:
+                from core.constants import get_pip_value_usd
+                pip_value = get_pip_value_usd(self.symbol)
+            except Exception:
+                pip_value = 10.0  # safe default for non-JPY majors
+
+            # ATR + median ATR for volatility adjustment.
+            atr = float(ind.get("atr", 0.0005) or 0.0005)
+            # Median ATR — use a rolling estimate from the regime ctx if
+            # available; otherwise fall back to the current ATR (ratio = 1.0
+            # → NORMAL volatility, no boost/penalty).
+            atr_median = float(regime.get("atr_median", atr) or atr)
+
+            # Drawdown % — pull from the DrawdownMonitor if wired.
+            current_dd = 0.0
+            if self._drawdown_monitor is not None:
+                try:
+                    dd_status = self._drawdown_monitor.status()
+                    current_dd = float(dd_status.get("current_drawdown_pct", 0.0) or 0.0)
+                except Exception:
+                    pass
+
+            # Loss streak — pull from the kill switch state if available,
+            # else default to 0 (no penalty).
+            consecutive_losses = 0
+            if self._kill_switch is not None:
+                try:
+                    ks_state = self._kill_switch.status() if hasattr(self._kill_switch, "status") else {}
+                    consecutive_losses = int(ks_state.get("consecutive_losses", 0) or 0)
+                except Exception:
+                    pass
+
+            # Open positions for correlation/heat check.
+            open_positions = []
+            try:
+                for pos in self._paper.get_open_positions():
+                    open_positions.append({
+                        "pair": pos.get("pair", ""),
+                        "direction": pos.get("signal") or pos.get("direction", ""),
+                        "risk_usd": float(pos.get("risk_usd", 0) or 0),
+                    })
+            except Exception:
+                pass
+
+            # News window flag — if analysis flagged news as unsafe, treat
+            # as news-active so volatility adjuster caps the size.
+            news_ctx = analysis_out.get("news_ctx", {}) or {}
+            news_active = not bool(news_ctx.get("trade_allowed", True))
+
+            # Historical stats for Kelly — pull from TradeMemory if available.
+            win_rate = None
+            avg_win_r = None
+            avg_loss_r = None
+            trade_count = 0
+            try:
+                mem_ctx = self._memory.get_context_for_ai(self.symbol) if self._memory else {}
+                trade_count = int(mem_ctx.get("total_trades", 0) or 0)
+                wr_pct = float(mem_ctx.get("overall_win_rate", 0) or 0)
+                if trade_count > 0 and wr_pct > 0:
+                    win_rate = wr_pct / 100.0
+                    # Default R multiples when memory doesn't expose them.
+                    avg_win_r = float(mem_ctx.get("avg_win_r", 1.5) or 1.5)
+                    avg_loss_r = float(mem_ctx.get("avg_loss_r", 1.0) or 1.0)
+            except Exception:
+                pass
+
+            # Base risk % from RiskEngine (typically 1.0%).
+            base_risk_pct = float(risk_out.get("risk_pc", 1.0) or 1.0) / 100.0
+            # Capital tier multiplier — Tier 3 = 1.0 by default; lower
+            # tiers reduce.  We pull this from the live risk manager when
+            # available, otherwise default to 1.0 (mature system).
+            tier_mult = 1.0
+            if self._live_risk_manager is not None:
+                try:
+                    tier_mult = float(self._live_risk_manager.current_tier.tier_mult)
+                except Exception:
+                    pass
+
+            # New equity high flag — paper trader balance vs starting.
+            is_new_high = False
+            try:
+                is_new_high = float(self._paper.balance) >= float(self.balance) * 1.10
+            except Exception:
+                pass
+
+            # ── Run the master PositionSizer ──────────────────────────
+            sizing = self._position_sizer.calculate(
+                balance=float(self.balance),
+                risk_pct=base_risk_pct,
+                sl_pips=float(risk_out.get("sl_pips", 0) or 0),
+                pip_value_per_lot=pip_value,
+                confidence=confidence,
+                atr=atr,
+                atr_median=atr_median,
+                consecutive_losses=consecutive_losses,
+                tier_mult=tier_mult,
+                win_rate=win_rate,
+                avg_win_r=avg_win_r,
+                avg_loss_r=avg_loss_r,
+                trade_count=trade_count,
+                pair=self.symbol,
+                direction=direction,
+                open_positions=open_positions,
+                current_drawdown_pct=current_dd,
+                is_new_equity_high=is_new_high,
+                news_active=news_active,
+            )
+
+            # Persist the full breakdown for journal/telegram/dashboard.
+            risk_out["position_sizing"] = sizing.to_dict()
+
+            # Apply the sizer's verdict.
+            if not sizing.approved:
+                log.info(
+                    f"[Day 76 Sizer] REJECTED {self.symbol} {direction} — {sizing.reject_reason}"
+                )
+                risk_out["approved"] = False
+                risk_out["lot"] = 0.0
+                risk_out["risk_usd"] = 0.0
+                risk_out["risk_pc"] = 0.0
+                risk_out["reject_reason"] = f"Day76 Sizer: {sizing.reject_reason}"
+                self._publish("risk.event", {
+                    "kind": "position_sizer_reject",
+                    "symbol": self.symbol,
+                    "reason": sizing.reject_reason,
+                })
+            else:
+                log.info(
+                    f"[Day 76 Sizer] {self.symbol} {direction} | "
+                    f"base_lot={sizing.base_lot:.2f} → final_lot={sizing.lot:.2f} | "
+                    f"mult=×{sizing.final_mult:.3f} | "
+                    f"risk=${sizing.risk_amount_usd:.0f} ({sizing.risk_pct:.2%})"
+                )
+                risk_out["lot"] = sizing.lot
+                risk_out["risk_usd"] = sizing.risk_amount_usd
+                risk_out["risk_pc"] = round(sizing.risk_pct * 100, 2)
+                self._publish("analytics.metric", {
+                    "symbol": self.symbol,
+                    "metric": "position_size_multiplier",
+                    "value": sizing.final_mult,
+                })
+        except Exception as e:
+            # The sizer must NEVER break the trading pipeline.  Log and
+            # fall through with the original risk_out intact.
+            log.warning(f"[Day 76 Sizer] {self.symbol} sizing failed — using RiskEngine base lot: {e}")
+
+        return risk_out
 
     def get_signal(self, show_chart: bool = False, auto_paper_trade: bool = True) -> dict:
         return self.run_cycle(show_chart=show_chart, auto_paper_trade=auto_paper_trade)
@@ -141,8 +442,13 @@ class AITrader:
         latest_price = None
 
         log.info("[1/9] Market Agent...")
-        market_out = self._market.run()
+        with self._stage(f"aitrader.{self.symbol}.market"):
+            market_out = self._market.run()
         if "error" in market_out:
+            # Don't send Telegram alert for market fetch failures — they're
+            # common (market closed, symbol temporarily unavailable) and
+            # would spam the user. Just log locally.
+            log.warning(f"[Market] {self.symbol} data fetch failed — skipping this cycle")
             return self._error_result(f"Market Agent: {market_out['error']}")
 
         ind = market_out.get("ind_ctx", {})
@@ -161,6 +467,13 @@ class AITrader:
         cb_check = self._circuit_breaker.allow_trade()
         if not cb_check["allowed"]:
             log.warning(f"[CircuitBreaker] {cb_check['mode']} — {cb_check['reason']}")
+            self._publish("risk.circuit_breaker", {
+                "symbol": self.symbol, "mode": cb_check["mode"], "reason": cb_check["reason"],
+            })
+            self._publish("risk.event", {
+                "kind": "circuit_breaker", "symbol": self.symbol,
+                "mode": cb_check["mode"], "reason": cb_check["reason"],
+            })
             result = self._monitor_only_result(
                 price=latest_price,
                 candle_time=candle_time,
@@ -172,17 +485,14 @@ class AITrader:
             self._print_final(result)
             return result
 
-        if candle_time and candle_time == self._last_decision_candle:
-            result = self._monitor_only_result(
-                price=latest_price,
-                candle_time=candle_time,
-                session_ctx=session_ctx,
-                elapsed=round(time.time() - t0, 1),
-                closed_trades=closed_processed,
-            )
-            self._print_final(result)
-            return result
-
+        # Day 72 fix: Removed candle dedup check that was blocking ALL pairs.
+        # The old logic compared candle_time with _last_decision_candle and
+        # skipped analysis if they matched. But since all pairs share the
+        # same candle time (e.g. 17:30), the first pair's cycle would set
+        # _last_decision_candle and ALL subsequent pairs would be skipped.
+        # Now we always run the full analysis pipeline. Duplicate trade
+        # prevention is handled by TradePermission + duplicate check in
+        # the Safety Guard step.
         self._last_decision_candle = candle_time
 
         log.info("[3/9] Analysis Agent...")
@@ -220,8 +530,14 @@ class AITrader:
 
         log.info("[4/9] Decision Agent...")
         entry = analysis_out["signal"].get("entry") or ind.get("close", 0)
+        # Day 72 fix: normalize STRONG_BUY/STRONG_SELL to BUY/SELL for approved check
+        _final_norm = analysis_out.get("final_signal", "WAIT")
+        if "STRONG_BUY" in str(_final_norm):
+            _final_norm = "BUY"
+        elif "STRONG_SELL" in str(_final_norm):
+            _final_norm = "SELL"
         placeholder_risk = {
-            "approved": analysis_out["final_signal"] in ("BUY", "SELL"),
+            "approved": _final_norm in ("BUY", "SELL"),
             "lot": 0,
             "sl_pips": 0,
             "tp_pips": 0,
@@ -246,6 +562,14 @@ class AITrader:
             f"Loss: {daily['daily_loss_pc']}% | "
             f"Limit left: {daily['limit_remaining_pc']}%"
         )
+
+        # ── Day 76 — Smart Capital Allocation override ───────────────
+        # Run the master PositionSizer on top of RiskEngine's base lot.
+        # This applies Kelly × Volatility × Confidence × Correlation ×
+        # Drawdown × Loss-streak multipliers and may shrink, grow, or
+        # block the lot.  When the sizer is not wired, risk_out passes
+        # through unchanged (fully backward-compatible).
+        risk_out = self._apply_advanced_sizing(risk_out, dec_out, market_out, analysis_out)
 
         log.info("[6/9] Safety Guard (Permission + Correlation)...")
         perm_out = self._perm.check(
@@ -351,24 +675,90 @@ class AITrader:
 
         log.info("[9/9] Execution + Alerts...")
         if approved_to_execute:
-            trade = self._router.execute(
-                {
-                    "decision": result["final_action"],
+            with self._stage(f"aitrader.{self.symbol}.execute"):
+                trade = self._router.execute(
+                    {
+                        "decision": result["final_action"],
+                        "symbol": self.symbol,
+                        "entry": result["entry"],
+                        "sl": result["sl"],
+                        "tp": result["tp"],
+                        "lot": result["lot"],
+                        "confidence": result["confidence"],
+                        "rr": result["rr"],
+                        "timeframe": self.timeframe,
+                    }
+                )
+            if trade:
+                result["paper_trade_id"] = trade.get("id")
+                result["paper_balance"] = self._paper.balance
+                self._risk.record_trade_open(self.symbol)
+                self._notify_trade_open(trade, result, dec_out)
+                # ── Day 37+ runtime unification ─────────────────────────
+                # Publish trade.execution + signal.generated events so the
+                # bus subscribers (alerts, dashboard, webhook, audit_trail)
+                # all see this trade without AITrader knowing about them.
+                self._publish("trade.execution", {
                     "symbol": self.symbol,
+                    "decision": result["final_action"],
                     "entry": result["entry"],
                     "sl": result["sl"],
                     "tp": result["tp"],
                     "lot": result["lot"],
                     "confidence": result["confidence"],
                     "rr": result["rr"],
+                    "trade_id": trade.get("id"),
+                    "execution_mode": self.execution_mode,
                     "timeframe": self.timeframe,
-                }
-            )
-            if trade:
-                result["paper_trade_id"] = trade.get("id")
-                result["paper_balance"] = self._paper.balance
-                self._risk.record_trade_open(self.symbol)
-                self._notify_trade_open(trade, result, dec_out)
+                })
+                self._publish("signal.generated", {
+                    "symbol": self.symbol,
+                    "signal": result["final_action"],
+                    "confidence": result["confidence"],
+                    "source": "aitrader",
+                })
+                # ── Day 67: Confluence Engine Telegram alert ──────────────
+                # If a confluence decision was computed by AnalysisAgent,
+                # send the rich multi-factor signal alert to Telegram.
+                try:
+                    confluence_ctx = analysis_out.get("confluence") if isinstance(analysis_out, dict) else None
+                    if confluence_ctx and confluence_ctx.get("should_trade"):
+                        from intelligence.confluence_engine import ConfluenceDecision
+                        decision = ConfluenceDecision(
+                            pair=confluence_ctx.get("pair", self.symbol),
+                            timeframe=confluence_ctx.get("timeframe", self.timeframe),
+                            direction=confluence_ctx.get("direction", result["final_action"]),
+                            confidence=confluence_ctx.get("confidence", result["confidence"]),
+                            setup_quality=confluence_ctx.get("setup_quality", "A"),
+                            aligned_factors=confluence_ctx.get("aligned_factors", 0),
+                            total_factors=confluence_ctx.get("total_factors", 0),
+                            buy_score=confluence_ctx.get("buy_score", 0),
+                            sell_score=confluence_ctx.get("sell_score", 0),
+                            net_score=confluence_ctx.get("net_score", 0),
+                            factors=confluence_ctx.get("factors", []),
+                            market_story=confluence_ctx.get("market_story", ""),
+                            risks=confluence_ctx.get("risks", []),
+                        )
+                        alert_msg = decision.to_telegram_alert()
+                        if alert_msg and self.notifier:
+                            self._run_async(self.notifier.send_message(alert_msg))
+                except Exception as e:
+                    log.debug(f"[Day 67] confluence telegram alert failed: {e}")
+
+                if self._metrics is not None:
+                    try:
+                        self._metrics.inc("trades.opened")
+                        self._metrics.set_gauge(f"paper.balance.{self.symbol}", self._paper.balance)
+                    except Exception:
+                        pass
+            else:
+                # Router returned None — broker failure or rejection.
+                self._publish("broker.failure", {
+                    "symbol": self.symbol,
+                    "reason": "execution_router returned None",
+                    "decision": result["final_action"],
+                })
+                self._record_error("broker", f"execution returned None for {self.symbol}")
 
         if show_chart:
             ChartEngine(self.symbol, self.timeframe).create_full_chart(
@@ -381,6 +771,33 @@ class AITrader:
             )
 
         self._print_final(result)
+        # ── Day 37+ professional: log every decision to trade journal ──
+        try:
+            from core.professional_tools import get_trade_journal, JournalEntry
+            journal = get_trade_journal()
+            cycle = journal.next_cycle()
+            entry = JournalEntry(
+                timestamp=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                cycle=cycle,
+                symbol=self.symbol,
+                timeframe=self.timeframe,
+                session=result.get("session") or "UNKNOWN",
+                decision=result.get("final_action", "WAIT"),
+                confidence=float(result.get("confidence", 0) or 0),
+                entry=result.get("entry"),
+                sl=result.get("sl"),
+                tp1=result.get("tp"),
+                tp2=None,
+                lot=float(result.get("lot", 0) or 0),
+                rr_ratio=float(result.get("rr", 0) or 0),
+                risk_usd=float(result.get("risk_usd", 0) or 0),
+                reason=str(result.get("reject_reason", ""))[:200],
+                llm_analysis=str(result.get("llm_analysis", ""))[:500],
+                master_analysis=str(result.get("master_analysis", ""))[:500],
+            )
+            journal.log_decision(entry)
+        except Exception as e:
+            log.debug(f"[Journal] log_decision failed: {e}")
         return result
 
     def monitor_open_trades(self, price: float = None) -> list[dict]:
@@ -438,6 +855,33 @@ class AITrader:
                     log.warning(f"[Learning] Close sync failed for memory trade #{memory_trade_id}: {e}")
 
             self._notify_trade_close(trade)
+            # ── Day 37+ runtime unification ─────────────────────────
+            # Publish trade.close + learning.feedback so bus subscribers
+            # (analytics, dashboard, audit_trail, learning) all see the
+            # closed trade without AITrader knowing about them.
+            self._publish("trade.close", {
+                "symbol": trade.get("pair"),
+                "result": trade.get("result"),
+                "pnl": trade.get("pnl"),
+                "rr_ratio": rr_ratio,
+                "trade_id": memory_trade_id,
+            })
+            self._publish("learning.feedback", {
+                "symbol": trade.get("pair"),
+                "result": trade.get("result"),
+                "pnl": trade.get("pnl"),
+                "rr_ratio": rr_ratio,
+                "memory_trade_id": memory_trade_id,
+            })
+            if self._metrics is not None:
+                try:
+                    self._metrics.inc("trades.closed")
+                    if trade.get("result") == "WIN":
+                        self._metrics.inc("trades.wins")
+                    elif trade.get("result") == "LOSS":
+                        self._metrics.inc("trades.losses")
+                except Exception:
+                    pass
             processed.append(trade)
 
         return processed
@@ -552,6 +996,8 @@ class AITrader:
             "session": self._format_session_label(session_ctx),
             "decision_candle": candle_time,
             "closed_trades": closed_trades or [],
+            # Day 76 — full sizer breakdown for journal/telegram/dashboard.
+            "position_sizing": risk_out.get("position_sizing"),
         }
 
     def _print_final(self, r: dict) -> None:
@@ -580,6 +1026,13 @@ class AITrader:
                 log.info(f"  FINAL ACTION : {r['final_action']}")
                 log.info(f"  Entry: {r['entry']} | SL: {r['sl']} | TP: {r['tp']}")
                 log.info(f"  Lot: {r['lot']} | R:R 1:{r['rr']} | Risk: ${r['risk_usd']}")
+                # Day 76 — show sizer breakdown if available
+                ps = r.get("position_sizing")
+                if ps and ps.get("approved"):
+                    log.info(
+                        f"  Sizer        : base={ps.get('base_lot', 0):.2f} → "
+                        f"final={ps.get('lot', 0):.2f} (×{ps.get('final_mult', 0):.3f})"
+                    )
                 if r.get("trade_id"):
                     log.info(f"  Trade ID     : #{r['trade_id']}")
                 log.info(
@@ -748,6 +1201,7 @@ class AutonomousTraderSystem:
         use_scanner: bool = False,
         execution_mode: str = None,
         approval_mode: int = 3,
+        registry: "Optional[ServiceRegistry]" = None,
     ):
         self.symbols = [self._clean_symbol(s) for s in (symbols or ["EURUSD", "GBPUSD", "USDJPY"])]
         self.timeframe = timeframe
@@ -766,24 +1220,82 @@ class AutonomousTraderSystem:
         self._last_backup = None
         self._last_results: list[dict] = []
 
+        # ── Day 37+ runtime unification ──────────────────────────────
+        # Accept an optional ServiceRegistry. When provided, the system
+        # pulls shared services (CircuitBreaker, ApprovalMode, scanner,
+        # notifier, etc.) from it instead of constructing fresh copies,
+        # and publishes events / metrics to the central bus.
+        self._registry = registry
+        self._bus = get_bus() if _RUNTIME_INFRA_AVAILABLE else None
+        self._metrics = get_metrics() if _RUNTIME_INFRA_AVAILABLE else None
+
         # Day 36/37 — Market Scanner picks the day's Top-N tradeable pairs
         # each cycle instead of always scanning a fixed list. It needs a
         # market_data_manager (MT5 tick/candle bundle) to actually rank
         # pairs; that adapter isn't built yet, so until it is,
         # _select_cycle_symbols() below safely falls back to self.symbols.
-        self.scanner = MarketScanner(risk_engine=None) if (use_scanner and MarketScanner) else None
+        # If a registry is available, prefer its shared scanner.
+        if registry is not None:
+            shared_scanner = registry.try_resolve("market_scanner")
+            if use_scanner and shared_scanner is not None:
+                self.scanner = shared_scanner
+            elif use_scanner and MarketScanner:
+                self.scanner = MarketScanner(risk_engine=None)
+            else:
+                self.scanner = None
+        else:
+            self.scanner = MarketScanner(risk_engine=None) if (use_scanner and MarketScanner) else None
 
         # Circuit breaker + approval mode are global state (one shared JSON
         # file each) — created ONCE here and handed to every symbol's
         # AITrader so they don't overwrite each other's state.
-        self.circuit_breaker = CircuitBreaker(balance=balance)
+        # Prefer the registry's shared instances if available.
+        if registry is not None:
+            shared_cb = registry.try_resolve("circuit_breaker")
+            self.circuit_breaker = shared_cb if shared_cb is not None else CircuitBreaker(balance=balance)
+        else:
+            self.circuit_breaker = CircuitBreaker(balance=balance)
         self.approval = ApprovalMode(mode=approval_mode)
 
-        self.notifier = TelegramNotifier() if enable_telegram and TelegramNotifier else None
+        if registry is not None:
+            shared_notifier = registry.try_resolve("telegram_notifier")
+            if shared_notifier is not None:
+                self.notifier = shared_notifier
+            else:
+                self.notifier = TelegramNotifier() if enable_telegram and TelegramNotifier else None
+        else:
+            self.notifier = TelegramNotifier() if enable_telegram and TelegramNotifier else None
         self.traders: dict[str, AITrader] = {
             symbol: self._build_trader(symbol) for symbol in self.symbols
         }
         self._sync_risk_state()
+
+        # ── Webhook / external command subscription ──────────────────
+        # Listen for webhook.command events and route them into the system.
+        if self._bus is not None:
+            try:
+                self._bus.subscribe("webhook.command", self._on_webhook_command)
+            except Exception as e:
+                log.warning(f"[System] webhook.command subscription failed: {e}")
+
+    def _on_webhook_command(self, evt) -> None:
+        """Handle external commands received via webhook.
+        Payload shape: {"action": "pause"|"resume"|"close_all"|"status", ...}"""
+        if evt.payload is None:
+            return
+        action = (evt.payload.get("action") or "").lower() if isinstance(evt.payload, dict) else ""
+        log.info(f"[System] Webhook command: {action} — {evt.payload}")
+        if action == "pause":
+            self._pause_until = datetime.now(timezone.utc) + timedelta(hours=1)
+            log.info("[System] Paused via webhook for 1 hour")
+        elif action == "resume":
+            self._pause_until = None
+            log.info("[System] Resumed via webhook")
+        elif action == "stop":
+            self.stop()
+        elif action == "status":
+            # The next cycle will write a fresh latest_report.json
+            pass
 
     def _build_trader(self, symbol: str) -> AITrader:
         return AITrader(
@@ -796,18 +1308,56 @@ class AutonomousTraderSystem:
             approval_mode=self.approval_mode,
             circuit_breaker=self.circuit_breaker,
             approval=self.approval,
+            registry=self._registry,
         )
 
     def run(self) -> dict:
+        # Day 37+ fix: reset stop flag so run() can be called again after a
+        # previous stop() / crash. This makes auto-restart from main.py work.
+        self._stop_requested = False
         self._start_telegram_commands()
         self.backup_state(force=True)
         cycles = 0
 
+        # ── Day 66: Send Telegram alert for upcoming high-impact news ──
+        try:
+            from intelligence.news_ai import get_news_intelligence
+            news_ai = get_news_intelligence()
+            news_ai.set_pairs(self.symbols)
+            alert_msg = news_ai.format_telegram_alert()
+            if alert_msg and self.notifier:
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.ensure_future(self.notifier.send_message(alert_msg))
+                    else:
+                        loop.run_until_complete(self.notifier.send_message(alert_msg))
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    loop.run_until_complete(self.notifier.send_message(alert_msg))
+                    loop.close()
+        except Exception as e:
+            log.debug(f"[System] Day 66 news alert failed: {e}")
+
         log.info(
             f"[System] Starting autonomous loop | Pairs={self.symbols} | "
             f"Timeframe={self.timeframe} | Mode={self.execution_mode.upper()} | "
-            f"Scanner={'ON' if self.use_scanner else 'OFF'} | Balance=${self.balance}"
+            f"Scanner={'ON' if self.use_scanner else 'OFF'} | Balance=${self.balance} | "
+            f"Registry={'yes' if self._registry else 'no'}"
         )
+
+        # Publish startup event
+        if self._bus is not None:
+            try:
+                self._bus.publish("system.startup", {
+                    "phase": "trader_loop",
+                    "symbols": self.symbols,
+                    "mode": self.execution_mode,
+                    "balance": self.balance,
+                }, source="autonomous_trader")
+            except Exception:
+                pass
 
         try:
             while not self._stop_requested:
@@ -823,6 +1373,12 @@ class AutonomousTraderSystem:
                 cycle_results = []
                 cycle_errors = []
                 active_symbols = self._select_cycle_symbols()
+                if self._metrics is not None:
+                    try:
+                        self._metrics.record_cycle()
+                        self._metrics.set_gauge("trader.active_symbols", len(active_symbols))
+                    except Exception:
+                        pass
 
                 for symbol in active_symbols:
                     trader = self.traders.get(symbol) or self._spawn_trader(symbol)
@@ -863,6 +1419,21 @@ class AutonomousTraderSystem:
 
         except KeyboardInterrupt:
             log.info("[System] Stop requested by user")
+        except Exception as e:
+            # Day 37+ fix: any unexpected error in the outer loop used to
+            # kill the trader entirely. Now we log + publish + keep the
+            # function returning a report (main.py's auto-restart wrapper
+            # will re-launch the loop).
+            log.exception(f"[System] FATAL error in trading loop: {e}")
+            try:
+                if self._bus is not None:
+                    self._bus.publish("system.error", {
+                        "channel": "fatal_loop",
+                        "reason": str(e),
+                        "phase": "trader_loop",
+                    }, source="autonomous_trader")
+            except Exception:
+                pass
 
         report = self._build_system_report()
         self._write_runtime_report(report)
@@ -873,17 +1444,38 @@ class AutonomousTraderSystem:
 
     def _select_cycle_symbols(self) -> list[str]:
         """Scanner-driven Top-N pairs when enabled and wired up; the static
-        symbol list otherwise (or on any scanner failure)."""
-        if not self.use_scanner or not self.scanner:
-            return self.symbols
+        symbol list otherwise (or on any scanner failure).
+
+        Day 37+ professional upgrade: when scanner is disabled, fall back to
+        SessionAwarePairSelector instead of returning ALL 28 pairs every cycle.
+        This makes each cycle focus on 8-12 pairs that are active in the
+        current trading session (London/NY/Tokyo) instead of blindly scanning
+        all 28 — faster cycles, higher-quality signals.
+        """
+        # 1. Scanner-driven mode (if enabled)
+        if self.use_scanner and self.scanner:
+            try:
+                ranked = self.scanner.scan()
+                top = self.scanner.get_top_opportunities(ranked)
+                scanned = [opp["symbol"] for opp in top]
+                if scanned:
+                    return scanned
+            except Exception as e:
+                log.warning(f"[System] Scanner failed, falling back to session-aware selection: {e}")
+
+        # 2. Session-aware fallback (Day 37+ professional default)
         try:
-            ranked = self.scanner.scan()
-            top = self.scanner.get_top_opportunities(ranked)
-            scanned = [opp["symbol"] for opp in top]
-            return scanned or self.symbols
+            from core.professional_tools import get_pair_selector
+            selector = get_pair_selector(self.symbols)
+            pairs, session = selector.select_with_session(top_n=12)
+            if pairs:
+                log.info(f"[System] Session-aware pair selection: {session} → {len(pairs)} pairs")
+                return pairs
         except Exception as e:
-            log.warning(f"[System] Scanner failed, falling back to static symbols: {e}")
-            return self.symbols
+            log.warning(f"[System] Session-aware selector failed: {e}")
+
+        # 3. Final fallback: all symbols
+        return self.symbols
 
     def _spawn_trader(self, symbol: str) -> AITrader:
         symbol = self._clean_symbol(symbol)
@@ -939,15 +1531,15 @@ class AutonomousTraderSystem:
             trader._risk.sync_open_positions(open_pairs)
 
     def _start_telegram_commands(self) -> None:
-        if not self.notifier or not start_telegram_bot_polling or self._bot_thread:
-            return
-        self._bot_thread = threading.Thread(
-            target=start_telegram_bot_polling,
-            name="telegram-polling",
-            daemon=True,
-        )
-        self._bot_thread.start()
-        log.info("[System] Telegram command polling thread started")
+        """
+        Telegram polling boot_alerts phase এ already start হয়ে গেছে।
+        এখানে আর start করার দরকার নেই — duplicate = 409 Conflict।
+        শুধু log করি যে notifier available আছে কিনা।
+        """
+        if self.notifier:
+            log.info("[System] Telegram notifier ready (polling already started by boot_alerts)")
+        else:
+            log.info("[System] Telegram notifier not available — skipping")
 
     def _notify_warning(self, event_name: str, time_remaining: str) -> None:
         if not self.notifier:
@@ -1045,3 +1637,41 @@ class AutonomousTraderSystem:
 
     def _clean_symbol(self, symbol: str) -> str:
         return str(symbol).upper().replace("/", "").replace("=X", "").replace("USDT", "USD").strip()
+
+    # ── Day 37+ runtime unification: health & introspection ──────────
+    def health_status(self) -> dict:
+        """Return a snapshot of system health for the dashboard / health monitor.
+        Aggregates circuit-breaker state, open positions, last cycle results,
+        and any registered runtime metrics."""
+        cb = self.circuit_breaker.get_status() if self.circuit_breaker else None
+        open_positions = []
+        for trader in self.traders.values():
+            try:
+                open_positions.extend(trader._paper.get_open_positions())
+            except Exception:
+                pass
+        return {
+            "running": not self._stop_requested,
+            "paused": self._is_paused(),
+            "manual_pause": self._manual_pause_active(),
+            "execution_mode": self.execution_mode,
+            "approval_mode": self.approval.mode_name if self.approval else "N/A",
+            "symbols": self.symbols,
+            "active_traders": list(self.traders.keys()),
+            "circuit_breaker": cb,
+            "open_positions": len(open_positions),
+            "last_cycle_results": (self._last_results or [])[-len(self.symbols):],
+            "consecutive_error_cycles": self._consecutive_error_cycles,
+            "registry_wired": self._registry is not None,
+            "bus_wired": self._bus is not None,
+            "metrics_wired": self._metrics is not None,
+        }
+
+    def get_runtime_metrics(self) -> dict:
+        """Return the runtime metrics report, if available."""
+        if self._metrics is not None:
+            try:
+                return self._metrics.build_report()
+            except Exception as e:
+                return {"error": str(e)}
+        return {"error": "runtime metrics not wired"}

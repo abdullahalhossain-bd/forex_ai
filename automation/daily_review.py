@@ -21,21 +21,57 @@ import os
 import re
 from datetime import datetime, timezone
 
+from dotenv import load_dotenv
 from utils.logger import get_logger
 
+load_dotenv()
 log = get_logger("daily_review")
 
-try:
-    import anthropic
-    _client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
-    LLM_AVAILABLE = True
-except Exception:
-    LLM_AVAILABLE = False
-    log.warning("[DailyReview] anthropic package not found — LLM disabled")
-
-MODEL = "claude-sonnet-4-6"
+# ── LLM client init — Groq (primary) + Gemini (fallback) via KeyManager ──
+LLM_AVAILABLE = False
+_groq_client = None
+_gemini_client = None
+_key_manager = None
+MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 MAX_TOKENS = 1200
 REVIEW_LOG_DIR = "memory/daily_reviews"
+
+try:
+    from core.llm_key_manager import get_llm_key_manager
+    _key_manager = get_llm_key_manager()
+    _groq_client = _key_manager.get_groq_client()
+    if _groq_client is not None:
+        LLM_AVAILABLE = True
+        log.info(f"[DailyReview] Groq client initialized | model={MODEL}")
+    if not LLM_AVAILABLE:
+        _gemini_client = _key_manager.get_gemini_client()
+        if _gemini_client is not None:
+            MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+            LLM_AVAILABLE = True
+            log.info(f"[DailyReview] Gemini client initialized (fallback) | model={MODEL}")
+except Exception as e:
+    log.warning(f"[DailyReview] LLMKeyManager init failed: {e} — trying single-key")
+    groq_key = os.getenv("GROQ_API_KEY_1") or os.getenv("GROQ_API_KEY", "")
+    if groq_key:
+        try:
+            from groq import Groq
+            _groq_client = Groq(api_key=groq_key)
+            LLM_AVAILABLE = True
+        except Exception as e2:
+            log.warning(f"[DailyReview] Groq init failed: {e2}")
+    if not LLM_AVAILABLE:
+        gemini_key = os.getenv("GEMINI_API_KEY_1") or os.getenv("GEMINI_API_KEY", "")
+        if gemini_key:
+            try:
+                from google import genai as google_genai
+                _gemini_client = google_genai.Client(api_key=gemini_key)
+                MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+                LLM_AVAILABLE = True
+            except Exception as e2:
+                log.warning(f"[DailyReview] Gemini init failed: {e2}")
+
+if not LLM_AVAILABLE:
+    log.warning("[DailyReview] No LLM available — daily review will use heuristic fallback")
 
 _SYSTEM = """You are an elite professional forex trader doing your end-of-day self-review,
 exactly the way a disciplined human trader journals after a trading session.
@@ -155,11 +191,31 @@ class DailyReview:
             f"{context}\n\n"
             "একজন professional trader-এর মতো honest self-review করো এবং JSON ফেরত দাও।"
         )
-        response = _client.messages.create(
-            model=MODEL, max_tokens=MAX_TOKENS, system=_SYSTEM,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        return response.content[0].text.strip()
+        # Primary: Groq
+        if _groq_client is not None:
+            try:
+                resp = _groq_client.chat.completions.create(
+                    model=MODEL,
+                    max_tokens=MAX_TOKENS,
+                    temperature=0.3,
+                    messages=[
+                        {"role": "system", "content": _SYSTEM},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                )
+                return resp.choices[0].message.content.strip()
+            except Exception as e:
+                log.warning(f"[DailyReview] Groq call failed: {e} — trying Gemini")
+        # Fallback: Gemini
+        if _gemini_client is not None:
+            try:
+                full_prompt = f"{_SYSTEM}\n\n{user_prompt}"
+                resp = _gemini_client.models.generate_content(model=MODEL, contents=full_prompt)
+                return resp.text.strip()
+            except Exception as e:
+                log.error(f"[DailyReview] Gemini call failed: {e}")
+                raise
+        raise RuntimeError("[DailyReview] No LLM available")
 
     def _parse_response(self, raw: str) -> dict:
         text = re.sub(r"^```(?:json)?\s*", "", raw.strip())

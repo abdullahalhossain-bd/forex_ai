@@ -11,6 +11,10 @@
 # named entry point + startup banner described in the Day 37 doc's
 # "Step 1 — Start System" terminal output, so `main.py` can import
 # `TradingEngine` instead of reaching into core/trader.py directly.
+#
+# Day 37+ runtime unification: TradingEngine now accepts an optional
+# `registry` parameter (a ServiceRegistry) so the new boot_runtime() flow
+# in core/runtime.py can construct it with all shared services wired in.
 # ============================================================
 
 from config import EXECUTION_MODE
@@ -30,6 +34,9 @@ class TradingEngine(AutonomousTraderSystem):
     from a script, or from server/signal_pipeline.py's webhook path.
     """
 
+    def __init__(self, *args, registry=None, **kwargs):
+        super().__init__(*args, registry=registry, **kwargs)
+
     def run(self) -> dict:
         self._print_banner()
         return super().run()
@@ -47,6 +54,9 @@ class TradingEngine(AutonomousTraderSystem):
         print()
         print("Approval:")
         print(self.approval.mode_name)
+        print()
+        print("Registry:")
+        print("yes" if self._registry else "no")
         print()
         print("Status:")
         print("STARTING...")
@@ -68,3 +78,7 @@ class TradingEngine(AutonomousTraderSystem):
     def resume_trading(self, reason: str = "Manual override") -> dict:
         """Manual kill-switch reset — same as the doc's Mode 3 'AUTO MODE' resume."""
         return self.circuit_breaker.manual_resume(reason=reason)
+
+    def health(self) -> dict:
+        """Expose AutonomousTraderSystem.health_status() via the engine too."""
+        return self.health_status()

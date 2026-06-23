@@ -30,13 +30,20 @@ def _make_embedding_function():
     """
     Embedding function তৈরি করো।
     - আগে ChromaDB-র built-in ONNX embedding ব্যবহার করো (HuggingFace লাগে না)
-    - না পেলে SentenceTransformer try করো
+    - না পেলে SentenceTransformer try করো (HF_TOKEN ব্যবহার করবে যদি থাকে)
     - সব fail হলে None return করো
     """
     if not CHROMA_AVAILABLE:
         return None
 
-    # Option 1: ChromaDB built-in ONNX embedding (no HuggingFace needed)
+    # Set HF_TOKEN environment variable if available (fixes 401 Unauthorized)
+    import os
+    hf_token = os.getenv("HF_TOKEN", "")
+    if hf_token:
+        os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
+        os.environ["HF_HUB_AUTH_TOKEN"] = hf_token
+
+    # Option 1: ChromaDB built-in ONNX embedding (no HuggingFace download needed)
     try:
         ef = embedding_functions.ONNXMiniLM_L6_V2()
         log.info("[KnowledgeStore] Using built-in ONNX embedding (no HuggingFace needed)")
@@ -44,18 +51,25 @@ def _make_embedding_function():
     except Exception as e:
         log.warning(f"[KnowledgeStore] ONNX embedding failed: {e}")
 
-    # Option 2: SentenceTransformer (local cache চেক করে)
+    # Option 2: SentenceTransformer (check local cache first, then use HF_TOKEN)
     try:
-        import os
         from sentence_transformers import SentenceTransformer as _ST
 
         model_name = "all-MiniLM-L6-v2"
-        cache_dir = os.path.join(
-            os.path.expanduser("~"),
-            ".cache", "torch", "sentence_transformers",
-            model_name.replace("/", "_"),
-        )
-        model_path = cache_dir if os.path.isdir(cache_dir) else model_name
+        # Check multiple cache locations
+        possible_cache_dirs = [
+            os.path.join(os.path.expanduser("~"), ".cache", "torch", "sentence_transformers",
+                        model_name.replace("/", "_")),
+            os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub",
+                        f"models--sentence-transformers--{model_name.replace('/', '_')}"),
+        ]
+        model_path = model_name  # default: download from HF
+        for cache_dir in possible_cache_dirs:
+            if os.path.isdir(cache_dir):
+                model_path = cache_dir
+                log.info(f"[KnowledgeStore] Found cached model at: {cache_dir}")
+                break
+
         ef = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name=model_path
         )
@@ -101,12 +115,23 @@ class KnowledgeStore:
 
             self.ef = _make_embedding_function()
 
-            collection_kwargs = {"name": "trading_memory"}
-            if self.ef is not None:
-                collection_kwargs["embedding_function"] = self.ef
-
-            self.collection = self.client.get_or_create_collection(**collection_kwargs)
-            log.info(f"[KnowledgeStore] Ready | Memories: {self.collection.count()}")
+            # Day 72 fix: when getting an existing collection, pass our embedding
+            # function explicitly to override whatever was stored previously.
+            # This prevents ChromaDB from trying to use the old SentenceTransformer
+            # embedding (which needs HuggingFace download → 401 error).
+            try:
+                collection_kwargs = {"name": "trading_memory"}
+                if self.ef is not None:
+                    collection_kwargs["embedding_function"] = self.ef
+                self.collection = self.client.get_collection(**collection_kwargs)
+                log.info(f"[KnowledgeStore] Loaded existing collection | Memories: {self.collection.count()}")
+            except Exception:
+                # Collection doesn't exist — create it with our embedding function
+                collection_kwargs = {"name": "trading_memory"}
+                if self.ef is not None:
+                    collection_kwargs["embedding_function"] = self.ef
+                self.collection = self.client.create_collection(**collection_kwargs)
+                log.info(f"[KnowledgeStore] Created new collection | Memories: 0")
 
         except Exception as e:
             log.error(f"[KnowledgeStore] Init failed: {e} — knowledge store disabled")
@@ -139,7 +164,11 @@ class KnowledgeStore:
             )
             return mem_id
         except Exception as e:
-            log.error(f"[KnowledgeStore] add_memory failed: {e}")
+            # Log only once per session, then suppress to avoid spam
+            if not hasattr(self, '_add_error_logged'):
+                log.error(f"[KnowledgeStore] add_memory failed: {e}")
+                log.warning("[KnowledgeStore] Further add_memory errors will be suppressed")
+                self._add_error_logged = True
             return None
 
     def add_trade_memory(self, trade: dict, result: str, lesson: str) -> str | None:
@@ -216,10 +245,20 @@ class KnowledgeStore:
     # ── Bulk Seed ─────────────────────────────────────────────
 
     def seed_trading_rules(self):
-        """Core trading rules একবার store করো।"""
+        """Core trading rules একবার store করো। Skip if already seeded."""
         if not self._is_ready():
             log.warning("[KnowledgeStore] Skipping seed — store not ready")
             return
+
+        # Day 72 fix: Skip seeding if collection already has memories.
+        # This prevents repeated 401 HuggingFace errors on every restart.
+        try:
+            existing_count = self.collection.count()
+            if existing_count > 0:
+                log.info(f"[KnowledgeStore] Already has {existing_count} memories — skipping seed")
+                return
+        except Exception:
+            pass  # If count fails, proceed with seeding
 
         rules = [
             "Never trade against the higher timeframe trend. If daily is bearish, avoid buying on lower timeframes.",

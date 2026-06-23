@@ -18,7 +18,7 @@ class TradePermission:
         5. Confluence enough?
     """
 
-    MIN_CONFIDENCE = 55   # কমপক্ষে এই confidence হলে trade
+    MIN_CONFIDENCE = 50   # Lowered from 55 to 50 — original was too strict, blocking many valid trades
 
     def check(
         self,

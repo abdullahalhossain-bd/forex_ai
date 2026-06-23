@@ -97,6 +97,20 @@ class TradeMemory:
 
         self._load_vector_data()
 
+        # Day 37 fix: previously the `seed_rules` argument was silently ignored.
+        # Now we honor it by seeding the KnowledgeStore with canonical trading
+        # rules exactly once (idempotent — KnowledgeStore.seed_trading_rules
+        # internally checks if already seeded and skips).
+        if seed_rules:
+            try:
+                from memory.knowledge_store import KnowledgeStore
+                ks = KnowledgeStore()
+                if hasattr(ks, "seed_trading_rules"):
+                    ks.seed_trading_rules()
+                    log.info("[TradeMemory] Trading rules seeding completed")
+            except Exception as e:
+                log.warning(f"[TradeMemory] Rule seeding skipped (non-critical): {e}")
+
     def _has_model(self) -> bool:
         """Embedding model available কিনা চেক করো।"""
         return self._model is not None

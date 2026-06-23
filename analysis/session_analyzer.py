@@ -457,9 +457,15 @@ class SessionAnalyzer:
         fusion = self.session_smc_fusion(session, smc_ctx, signal)
 
         # ── Final trade gate ──────────────────────────────────
+        # Day 37+ fix: previously this hard-blocked trades when session score
+        # dropped below (min_confidence - 20). Per user request, we no longer
+        # hard-block — instead we let the trade flow through and let the
+        # downstream Risk Engine + TradePermission decide based on confidence.
+        # Session score still affects confidence via session_smc_fusion().
+        # Only the explicit DEAD_ZONE session blocks trades entirely.
         trade_allowed = (
             strategy["trade_allowed"]
-            and session_conf["session_score"] >= strategy["min_confidence"] - 20
+            and session != "DEAD_ZONE"
         )
 
         log.info(

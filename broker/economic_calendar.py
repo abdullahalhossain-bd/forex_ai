@@ -56,6 +56,43 @@ class EconomicCalendar:
         ]
         self._save()
 
+    def get_today_events(self, currency: str = None) -> list[dict]:
+        """Return all HIGH-impact events occurring today (UTC).
+        Optional `currency` filter restricts to events for that currency.
+        Used by orchestrator/daily_routine.py to build the morning briefing."""
+        today = datetime.now(timezone.utc).date()
+        out = []
+        for event in self._events:
+            if event["impact"] != "HIGH":
+                continue
+            if currency and event.get("currency") and event["currency"] != currency.upper():
+                continue
+            try:
+                event_time = datetime.fromisoformat(event["time"].replace("Z", "+00:00"))
+                if event_time.date() == today:
+                    out.append(event)
+            except Exception:
+                continue
+        return out
+
+    def get_upcoming_events(self, hours: int = 24, currency: str = None) -> list[dict]:
+        """Return HIGH-impact events in the next `hours` hours."""
+        now = datetime.now(timezone.utc)
+        horizon = now + timedelta(hours=hours)
+        out = []
+        for event in self._events:
+            if event["impact"] != "HIGH":
+                continue
+            if currency and event.get("currency") and event["currency"] != currency.upper():
+                continue
+            try:
+                event_time = datetime.fromisoformat(event["time"].replace("Z", "+00:00"))
+                if now <= event_time <= horizon:
+                    out.append(event)
+            except Exception:
+                continue
+        return out
+
     # ─────────────────────────────────────────────
     # CHECK
     # ─────────────────────────────────────────────

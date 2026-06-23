@@ -37,9 +37,17 @@ class ModelVersionManager:
         self.model_dir = os.path.join(self.config.MODEL_DIR, 'versions')
         os.makedirs(self.model_dir, exist_ok=True)
         
-        # Initialize MLflow
-        mlflow.set_tracking_uri(f"file://{os.path.join(self.config.MODEL_DIR, 'mlruns')}")
-        mlflow.tensorflow.autolog()
+        # Initialize MLflow — guarded so the module loads even when mlflow
+        # is not installed. (Previously this ran unconditionally and broke
+        # the module-level singleton `model_manager = ModelVersionManager()`.)
+        if MLFLOW_AVAILABLE:
+            try:
+                mlflow.set_tracking_uri(f"file://{os.path.join(self.config.MODEL_DIR, 'mlruns')}")
+                mlflow.tensorflow.autolog()
+            except Exception as e:
+                self.logger.warning("MLflow init failed (continuing without): %s", e)
+        else:
+            self.logger.info("MLflow not installed — model_versioning running in degraded mode.")
     
     def save_model_version(self, model: Any, version: str, metrics: Dict, 
                           params: Dict, notes: str = "") -> str:

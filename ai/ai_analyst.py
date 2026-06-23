@@ -9,6 +9,7 @@
 import os
 import json
 import re
+import time
 from dotenv import load_dotenv
 from utils.logger import get_logger
 
@@ -33,26 +34,69 @@ class AIAnalyst:
         self._gemini_client = None  # google.genai Client object
         self._init_clients()
 
-    def _init_clients(self):
-        # Groq setup
-        groq_key = os.getenv("GROQ_API_KEY")
-        if groq_key:
-            try:
-                from groq import Groq
-                self._groq_client = Groq(api_key=groq_key)
-                log.info(f"Groq client initialized | model={self.GROQ_MODEL}")
-            except Exception as e:
-                log.warning(f"Groq init failed: {e}")
+    # ── Public read-only accessors ──────────────────────────────────
+    # Added so external callers (main.py status check, health monitor) can
+    # introspect which LLM is wired without poking at underscore-prefixed
+    # attributes (which previously caused AttributeError in main.py:279).
+    @property
+    def groq_client(self):
+        return self._groq_client
 
-        # Gemini setup (fallback) — google-genai >= 0.8 new SDK
-        gemini_key = os.getenv("GEMINI_API_KEY")
-        if gemini_key:
-            try:
-                from google import genai as google_genai
-                self._gemini_client = google_genai.Client(api_key=gemini_key)
+    @property
+    def gemini_client(self):
+        return self._gemini_client
+
+    @property
+    def groq_model(self) -> str:
+        return self.GROQ_MODEL
+
+    @property
+    def gemini_model(self) -> str:
+        return self.GEMINI_MODEL
+
+    @property
+    def active_provider(self) -> str:
+        """Return 'groq', 'gemini', or 'none' depending on which client is wired."""
+        if self._groq_client is not None:
+            return "groq"
+        if self._gemini_client is not None:
+            return "gemini"
+        return "none"
+
+    def _init_clients(self):
+        """Initialize LLM clients using LLMKeyManager (multi-key rotation)."""
+        try:
+            from core.llm_key_manager import get_llm_key_manager
+            manager = get_llm_key_manager()
+            self._key_manager = manager
+            self._groq_client = manager.get_groq_client()
+            if self._groq_client is not None:
+                log.info(f"Groq client initialized | model={self.GROQ_MODEL}")
+            self._gemini_client = manager.get_gemini_client()
+            if self._gemini_client is not None:
                 log.info(f"Gemini client initialized (fallback ready) | model={self.GEMINI_MODEL}")
-            except Exception as e:
-                log.warning(f"Gemini init failed: {e}")
+            if self._groq_client is None and self._gemini_client is None:
+                log.warning("No LLM client available (Groq + Gemini both failed)")
+        except Exception as e:
+            log.warning(f"LLMKeyManager init failed, falling back to single-key: {e}")
+            self._key_manager = None
+            # Fallback: single-key mode (backwards compat)
+            groq_key = os.getenv("GROQ_API_KEY_1") or os.getenv("GROQ_API_KEY", "")
+            if groq_key:
+                try:
+                    from groq import Groq
+                    self._groq_client = Groq(api_key=groq_key)
+                    log.info(f"Groq client initialized (single-key fallback) | model={self.GROQ_MODEL}")
+                except Exception as e2:
+                    log.warning(f"Groq init failed: {e2}")
+            gemini_key = os.getenv("GEMINI_API_KEY_1") or os.getenv("GEMINI_API_KEY", "")
+            if gemini_key:
+                try:
+                    from google import genai as google_genai
+                    self._gemini_client = google_genai.Client(api_key=gemini_key)
+                    log.info(f"Gemini client initialized (single-key fallback) | model={self.GEMINI_MODEL}")
+                except Exception as e2:
+                    log.warning(f"Gemini init failed: {e2}")
 
     # ── Public method ──────────────────────────────────────────
     def analyze(
@@ -182,30 +226,68 @@ OUTPUT FORMAT — Return ONLY valid JSON, no extra text:
   "risk_warning": "Any additional risk warning for the trader"
 }}"""
 
-    # ── LLM callers ───────────────────────────────────────────
+    # ── LLM callers (multi-key retry) ───────────────────────────
     def _call_groq(self, prompt: str) -> str | None:
-        try:
-            resp = self._groq_client.chat.completions.create(
-                model=self.GROQ_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,
-                max_tokens=600,
-            )
-            return resp.choices[0].message.content
-        except Exception as e:
-            log.warning(f"Groq call failed: {e} — trying Gemini")
-            return None
+        """Call Groq with multi-key retry. If current key fails, tries next."""
+        max_retries = 3
+        for attempt in range(max_retries):
+            client = self._groq_client
+            if client is None and hasattr(self, '_key_manager') and self._key_manager:
+                client = self._key_manager.get_groq_client()
+            if client is None:
+                log.warning("No Groq client available")
+                return None
+            try:
+                resp = client.chat.completions.create(
+                    model=self.GROQ_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.2,
+                    max_tokens=600,
+                )
+                # Success — mark key as healthy
+                if hasattr(self, '_key_manager') and self._key_manager:
+                    self._key_manager.mark_groq_success()
+                return resp.choices[0].message.content
+            except Exception as e:
+                error_str = str(e)
+                rate_limited = "429" in error_str or "rate" in error_str.lower()
+                log.warning(f"Groq call failed (attempt {attempt+1}/{max_retries}): {error_str[:100]}")
+                if hasattr(self, '_key_manager') and self._key_manager:
+                    self._key_manager.mark_groq_failure(error_str, rate_limited)
+                    # Get a fresh client with a different key
+                    self._groq_client = self._key_manager.get_groq_client()
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+        return None
 
     def _call_gemini(self, prompt: str) -> str | None:
-        try:
-            resp = self._gemini_client.models.generate_content(
-                model=self.GEMINI_MODEL,
-                contents=prompt,
-            )
-            return resp.text
-        except Exception as e:
-            log.error(f"Gemini call failed: {e}")
-            return None
+        """Call Gemini with multi-key retry."""
+        max_retries = 3
+        for attempt in range(max_retries):
+            client = self._gemini_client
+            if client is None and hasattr(self, '_key_manager') and self._key_manager:
+                client = self._key_manager.get_gemini_client()
+            if client is None:
+                log.warning("No Gemini client available")
+                return None
+            try:
+                resp = client.models.generate_content(
+                    model=self.GEMINI_MODEL,
+                    contents=prompt,
+                )
+                if hasattr(self, '_key_manager') and self._key_manager:
+                    self._key_manager.mark_gemini_success()
+                return resp.text
+            except Exception as e:
+                error_str = str(e)
+                rate_limited = "429" in error_str or "rate" in error_str.lower()
+                log.warning(f"Gemini call failed (attempt {attempt+1}/{max_retries}): {error_str[:100]}")
+                if hasattr(self, '_key_manager') and self._key_manager:
+                    self._key_manager.mark_gemini_failure(error_str, rate_limited)
+                    self._gemini_client = self._key_manager.get_gemini_client()
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+        return None
 
     # ── Response parser ────────────────────────────────────────
     def _parse_response(self, raw: str) -> dict:

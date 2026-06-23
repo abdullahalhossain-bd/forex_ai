@@ -23,16 +23,20 @@ class MarketAgent:
     def run(self) -> dict:
         log.info(f"[MarketAgent] Running for {self.symbol} {self.timeframe}")
 
-        # MTF
-        mtf      = MultiTimeframeAnalyzer(self.symbol)
-        mtf_data = mtf.analyze(["1d", "4h", "1h", "15m"])
-        mtf_bias = mtf.print_summary(mtf_data)
+        # MTF — wrap in try/except so MTF failure doesn't kill the cycle
+        mtf_bias = "NEUTRAL"
+        try:
+            mtf      = MultiTimeframeAnalyzer(self.symbol)
+            mtf_data = mtf.analyze(["1d", "4h", "1h", "15m"])
+            mtf_bias = mtf.print_summary(mtf_data)
+        except Exception as e:
+            log.warning(f"[MarketAgent] MTF analysis failed (non-critical): {e}")
 
         # Fetch
         fetcher = DataFetcher()
         df = fetcher.fetch_ohlcv(self.symbol, self.timeframe, limit=300)
         if df is None:
-            log.error("Data fetch failed")
+            log.error(f"[MarketAgent] Data fetch failed for {self.symbol}")
             return {"error": "fetch_failed"}
 
         # Validate

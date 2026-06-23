@@ -29,17 +29,58 @@ from utils.logger import get_logger
 
 log = get_logger("learning.deep_analyzer")
 
-# ── Anthropic LLM ─────────────────────────────────────────────
-try:
-    import anthropic
-    _client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
-    LLM_AVAILABLE = True
-except Exception:
-    LLM_AVAILABLE = False
-    log.warning("[DeepAnalyzer] anthropic not available — heuristic fallback active")
-
-MODEL   = "claude-sonnet-4-6"
+# ── LLM client init — Groq (primary) + Gemini (fallback) via KeyManager ──
+LLM_AVAILABLE = False
+_groq_client = None
+_gemini_client = None
+_key_manager = None
+MODEL = ""
 MAX_TOK = 1200
+
+import os as _os
+from dotenv import load_dotenv as _load_dotenv
+_load_dotenv()
+
+try:
+    from core.llm_key_manager import get_llm_key_manager
+    _key_manager = get_llm_key_manager()
+    _groq_client = _key_manager.get_groq_client()
+    if _groq_client is not None:
+        MODEL = _os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        LLM_AVAILABLE = True
+        log.info(f"[DeepAnalyzer] Groq client initialized | model={MODEL}")
+    if not LLM_AVAILABLE:
+        _gemini_client = _key_manager.get_gemini_client()
+        if _gemini_client is not None:
+            MODEL = _os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+            LLM_AVAILABLE = True
+            log.info(f"[DeepAnalyzer] Gemini client initialized (fallback) | model={MODEL}")
+except Exception as e:
+    log.warning(f"[DeepAnalyzer] LLMKeyManager init failed: {e} — trying single-key")
+    _groq_key = _os.getenv("GROQ_API_KEY_1") or _os.getenv("GROQ_API_KEY", "")
+    if _groq_key:
+        try:
+            from groq import Groq as _Groq
+            _groq_client = _Groq(api_key=_groq_key)
+            MODEL = _os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+            LLM_AVAILABLE = True
+            log.info(f"[DeepAnalyzer] Groq client initialized (single-key) | model={MODEL}")
+        except Exception as _e:
+            log.warning(f"[DeepAnalyzer] Groq init failed: {_e}")
+    if not LLM_AVAILABLE:
+        _gemini_key = _os.getenv("GEMINI_API_KEY_1") or _os.getenv("GEMINI_API_KEY", "")
+        if _gemini_key:
+            try:
+                from google import genai as _google_genai
+                _gemini_client = _google_genai.Client(api_key=_gemini_key)
+                MODEL = _os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+                LLM_AVAILABLE = True
+                log.info(f"[DeepAnalyzer] Gemini client initialized (single-key) | model={MODEL}")
+            except Exception as _e:
+                log.warning(f"[DeepAnalyzer] Gemini init failed: {_e}")
+
+if not LLM_AVAILABLE:
+    log.warning("[DeepAnalyzer] No LLM available — heuristic fallback active")
 
 # ── Storage Paths ─────────────────────────────────────────────
 LESSON_MEMORY_PATH     = "memory/lesson_memory.json"
@@ -258,13 +299,26 @@ JSON schema:
         )
 
         try:
-            response = _client.messages.create(
-                model=MODEL,
-                max_tokens=MAX_TOK,
-                system=self._SYSTEM,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            raw = response.content[0].text.strip()
+            # Primary: Groq
+            if _groq_client is not None:
+                resp = _groq_client.chat.completions.create(
+                    model=MODEL,
+                    max_tokens=MAX_TOK,
+                    temperature=0.2,
+                    messages=[
+                        {"role": "system", "content": self._SYSTEM},
+                        {"role": "user", "content": prompt},
+                    ],
+                )
+                raw = resp.choices[0].message.content.strip()
+            # Fallback: Gemini
+            elif _gemini_client is not None:
+                full_prompt = f"{self._SYSTEM}\n\n{prompt}"
+                resp = _gemini_client.models.generate_content(model=MODEL, contents=full_prompt)
+                raw = resp.text.strip()
+            else:
+                return self._heuristic_analysis(context)
+
             raw = re.sub(r"^```(?:json)?\s*", "", raw)
             raw = re.sub(r"\s*```$", "", raw).strip()
             result = json.loads(raw)

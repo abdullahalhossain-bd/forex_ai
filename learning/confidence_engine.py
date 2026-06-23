@@ -178,7 +178,7 @@ class ConfidenceEngine:
         log.info(
             f"[ConfidenceEngine] {icon} {pattern} | {pair} {timeframe} {regime} | "
             f"hist={historical_score:.0f} recent={recent_score:.0f} regime={regime_score:.0f} "
-            f"→ final={final_confidence} (adj={adjustment:+d})"
+            f"→ final={final_confidence:.1f} (adj={adjustment:+.1f})"
         )
 
         return result
@@ -605,7 +605,7 @@ class ConfidenceEngine:
         print(f"  Bayesian penalty      : {result['bayesian_penalty']:+.1f}")
         print()
         print(f"  Base confidence  : {result['base_confidence']}")
-        print(f"  Adjustment       : {result['adjustment']:+d}")
+        print(f"  Adjustment       : {result['adjustment']:+.1f}")
         print(f"  Final confidence : {result['final_confidence']}")
         if result.get("should_skip"):
             print(f"\n  ⛔ SKIP: {result['skip_reason']}")

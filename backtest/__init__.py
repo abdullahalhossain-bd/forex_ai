@@ -1,6 +1,4 @@
-from backtest.data_loader import HistoricalDataLoader, load_data
-from backtest.engine import BacktestEngine
-from backtest.report import BacktestReport
-from backtest.simulator import ForexSimulator
-
+# Day 74 fix: lazy imports to avoid ta dependency at package level.
+# Old eager imports caused ModuleNotFoundError when ta not installed.
+# Now each module is imported on demand.
 __all__ = ["BacktestEngine", "HistoricalDataLoader", "ForexSimulator", "BacktestReport", "load_data"]

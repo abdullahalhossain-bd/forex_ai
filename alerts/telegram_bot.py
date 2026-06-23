@@ -1,27 +1,20 @@
 # alerts/telegram_bot.py
 # ============================================================
-# Telegram Alert & Command System — Full Upgrade
+# Telegram Alert & Command System — Full Upgrade (Fixed)
 # ============================================================
-# Features:
-#   - Trade opened notification (pair, entry, SL, TP, lot, confidence)
-#   - Trade closed notification (pair, result, P/L, pips)
-#   - Risk warnings (daily loss limit, drawdown alert)
-#   - Daily report (total trades, wins, losses, P/L %, best/worst)
-#   - System status (/status)
-#   - Pause / Resume trading (/pause, /resume) with callback
-#   - Morning briefing (market overview, session schedule)
-#   - Weekly calendar (/calendar)
-#   - All notifications formatted with emoji icons
-#
-#   - Hotfix: dynamic text (news event names, AI reasoning strings, etc.)
-#     can contain '*', '_', '`', or '[' which breaks Telegram's legacy
-#     Markdown entity parser and raises BadRequest: "Can't parse entities".
-#     Two layers of protection are added:
-#       1. `_escape_markdown()` strips those characters from any dynamic
-#          string before it's interpolated into a template.
-#       2. `send_message()` now falls back to a plain-text send (no
-#          parse_mode) if the Markdown-formatted send fails for any
-#          reason, so an alert is never silently dropped.
+# FIXES APPLIED:
+#   1. send_message() — correct fallback order:
+#      Markdown first → plain text fallback (not reversed).
+#   2. Command handlers (cmd_status, cmd_calendar, cmd_daily, etc.)
+#      now route through a shared _reply() helper that also falls back
+#      to plain text, so DB/dynamic content can never break a reply.
+#   3. cmd_daily — no longer creates a new TelegramNotifier() on every
+#      call; reuses a module-level shared instance instead.
+#   4. IS_TRADING_PAUSED protected by asyncio.Lock to prevent race
+#      conditions in concurrent async environments.
+#   5. notify_weekly_calendar / cmd_calendar — long messages are
+#      automatically chunked into ≤4096-char pieces so Telegram never
+#      silently drops an oversized message.
 # ============================================================
 
 import os
@@ -38,20 +31,17 @@ from utils.logger import get_logger
 log = get_logger("telegram_bot")
 
 # ── Global trading-pause state + callback mechanism ───────────
-# IS_TRADING_PAUSED is the canonical flag.  The optional
-# _on_pause_changed callback lets the trading engine register
-# a function that fires immediately whenever pause/resume changes,
-# so there is zero lag between the Telegram command and the engine
-# reacting to it.
 
 IS_TRADING_PAUSED: bool = False
+_pause_lock = asyncio.Lock()
 _on_pause_changed: Optional[Callable[[bool], None]] = None
+
+TELEGRAM_MSG_LIMIT = 4096  # Telegram hard limit per message
 
 
 def register_pause_callback(callback: Callable[[bool], None]) -> None:
     """
-    Call this from the trading engine (main.py) to register a
-    callback that fires the moment IS_TRADING_PAUSED changes.
+    Register a callback that fires the moment IS_TRADING_PAUSED changes.
 
         from alerts.telegram_bot import register_pause_callback
         register_pause_callback(my_engine.on_pause_changed)
@@ -63,10 +53,11 @@ def register_pause_callback(callback: Callable[[bool], None]) -> None:
     log.info("📞 Pause-state callback registered")
 
 
-def _set_trading_paused(value: bool) -> None:
-    """Internal helper — updates flag AND invokes callback."""
+async def _set_trading_paused(value: bool) -> None:
+    """Internal async helper — updates flag AND invokes callback."""
     global IS_TRADING_PAUSED
-    IS_TRADING_PAUSED = value
+    async with _pause_lock:
+        IS_TRADING_PAUSED = value
     if _on_pause_changed is not None:
         try:
             _on_pause_changed(value)
@@ -77,14 +68,11 @@ def _set_trading_paused(value: bool) -> None:
 def _escape_markdown(text) -> str:
     """
     Strip characters that break Telegram's legacy Markdown (V1) entity
-    parser when they appear in dynamic/unsanitized strings (news event
-    names, AI-generated reasoning text, pattern names, etc.).
+    parser when they appear in dynamic/unsanitized strings.
 
-    Legacy Markdown is fragile — a single unmatched '*', '_', '`', or '['
-    anywhere in the message causes the ENTIRE send to fail with
-    "Can't parse entities". Since these characters add no real value in
-    plain alert text, the simplest robust fix is to just remove them from
-    dynamic content before it's inserted into a template literal.
+    A single unmatched '*', '_', '`', or '[' causes the ENTIRE send to
+    fail with "Can't parse entities". Removing them from dynamic content
+    before interpolation is the simplest robust fix.
     """
     if text is None:
         return "—"
@@ -93,6 +81,27 @@ def _escape_markdown(text) -> str:
     for ch in ("*", "_", "`", "["):
         text = text.replace(ch, "")
     return text
+
+
+def _chunk_message(text: str, limit: int = TELEGRAM_MSG_LIMIT) -> list[str]:
+    """
+    Split a long message into chunks of at most `limit` characters,
+    splitting on newlines where possible to avoid cutting mid-line.
+    """
+    if len(text) <= limit:
+        return [text]
+
+    chunks = []
+    while text:
+        if len(text) <= limit:
+            chunks.append(text)
+            break
+        split_at = text.rfind("\n", 0, limit)
+        if split_at == -1:
+            split_at = limit
+        chunks.append(text[:split_at])
+        text = text[split_at:].lstrip("\n")
+    return chunks
 
 
 # ══════════════════════════════════════════════════════════════
@@ -115,27 +124,33 @@ class TelegramNotifier:
 
     async def send_message(self, text: str):
         """
-        Send a message asynchronously to the configured chat.
+        Send a Markdown-formatted message. If Telegram rejects the
+        Markdown (e.g. unmatched entity), falls back to plain text so
+        alerts are never silently dropped.
 
-        Tries Markdown formatting first. If Telegram rejects it (e.g. an
-        unescaped '*'/'_'/'`' in dynamic content broke entity parsing),
-        falls back to a plain-text send with no parse_mode so the alert
-        still reaches the user instead of being silently dropped.
+        Long messages are chunked automatically to stay within Telegram's
+        4096-character limit.
         """
         if not self.bot:
             return
-        try:
-            await self.bot.send_message(
-                chat_id=self.chat_id,
-                text=text,
-                parse_mode=ParseMode.MARKDOWN,
-            )
-        except Exception as e:
-            log.error(f"❌ Failed to send Telegram alert (markdown): {e}")
+
+        for chunk in _chunk_message(text):
+            # FIX #1: Try Markdown first, fall back to plain text.
             try:
-                await self.bot.send_message(chat_id=self.chat_id, text=text)
-            except Exception as e2:
-                log.error(f"❌ Failed to send Telegram alert (plain fallback): {e2}")
+                await self.bot.send_message(
+                    chat_id=self.chat_id,
+                    text=chunk,
+                    parse_mode=ParseMode.MARKDOWN,
+                )
+            except Exception as e:
+                log.warning(f"⚠️ Markdown send failed ({e}), retrying as plain text…")
+                try:
+                    await self.bot.send_message(
+                        chat_id=self.chat_id,
+                        text=chunk,
+                    )
+                except Exception as e2:
+                    log.error(f"❌ Failed to send Telegram alert (all attempts): {e2}")
 
     # ── 1. TRADE OPENED ────────────────────────────────────────
 
@@ -157,7 +172,6 @@ class TelegramNotifier:
         tp     = trade_data.get("tp", "—")
         lot    = trade_data.get("lot", "—")
 
-        # confidence colour
         if confidence >= 80:
             conf_icon = "🟢"
         elif confidence >= 60:
@@ -214,9 +228,7 @@ class TelegramNotifier:
     # ── 3. RISK WARNINGS ───────────────────────────────────────
 
     async def notify_daily_loss_limit(self, used: float, limit: float):
-        """
-        Fired when daily loss limit is reached or close to it.
-        """
+        """Fired when daily loss limit is reached or close to it."""
         pct = (used / limit * 100) if limit else 0
         if pct >= 100:
             msg = (
@@ -234,9 +246,7 @@ class TelegramNotifier:
         await self.send_message(msg)
 
     async def notify_drawdown_alert(self, drawdown_pct: float, max_allowed: float):
-        """
-        Fired when account drawdown exceeds safe thresholds.
-        """
+        """Fired when account drawdown exceeds safe thresholds."""
         if drawdown_pct >= max_allowed:
             msg = (
                 f"🔴 *DRAWDOWN ALERT* 🔴\n\n"
@@ -261,10 +271,10 @@ class TelegramNotifier:
         report keys: total_trades, wins, losses, pnl_pct, pnl_abs,
                      best_trade (dict), worst_trade (dict), win_rate
         """
-        total  = report.get("total_trades", 0)
-        wins   = report.get("wins", 0)
-        losses = report.get("losses", 0)
-        wr     = report.get("win_rate", 0)
+        total   = report.get("total_trades", 0)
+        wins    = report.get("wins", 0)
+        losses  = report.get("losses", 0)
+        wr      = report.get("win_rate", 0)
         pnl_pct = report.get("pnl_pct", 0)
         pnl_abs = report.get("pnl_abs", 0)
 
@@ -284,7 +294,8 @@ class TelegramNotifier:
         if best:
             msg += (
                 f"🏆 *Best Trade:*\n"
-                f"  📊 {_escape_markdown(best.get('pair', '—'))} → +${round(best.get('pnl', 0), 2)} "
+                f"  📊 {_escape_markdown(best.get('pair', '—'))} → "
+                f"+${round(best.get('pnl', 0), 2)} "
                 f"({best.get('pips', 0)} pips)\n\n"
             )
 
@@ -292,7 +303,8 @@ class TelegramNotifier:
         if worst:
             msg += (
                 f"💀 *Worst Trade:*\n"
-                f"  📊 {_escape_markdown(worst.get('pair', '—'))} → -${abs(round(worst.get('pnl', 0), 2))} "
+                f"  📊 {_escape_markdown(worst.get('pair', '—'))} → "
+                f"-${abs(round(worst.get('pnl', 0), 2))} "
                 f"({worst.get('pips', 0)} pips)\n\n"
             )
 
@@ -303,7 +315,7 @@ class TelegramNotifier:
 
     async def notify_news_warning(self, event_name: str, time_remaining: str):
         safe_event = _escape_markdown(event_name)
-        safe_time = _escape_markdown(time_remaining)
+        safe_time  = _escape_markdown(time_remaining)
         msg = (
             f"⚠️ *HIGH IMPACT NEWS WARNING* ⚠️\n\n"
             f"📰 *Event:* {safe_event}\n"
@@ -318,10 +330,13 @@ class TelegramNotifier:
         """
         weekly_calendar — NewsFilter.get_weekly_calendar() output:
             {"2026-06-22": [{"time":..,"currency":..,"event":..,"volatility":{...}}, ...], ...}
+
+        FIX #5: Long calendars are auto-chunked so Telegram never drops them.
         """
         if not weekly_calendar:
-            msg = "📅 *FOREX WEEKLY CALENDAR*\n\n✅ No major high-impact events this week."
-            await self.send_message(msg)
+            await self.send_message(
+                "📅 *FOREX WEEKLY CALENDAR*\n\n✅ No major high-impact events this week."
+            )
             return
 
         msg = "📅 *FOREX WEEKLY CALENDAR* 📅\n\n"
@@ -340,9 +355,10 @@ class TelegramNotifier:
                 )
             msg += "\n"
 
+        # send_message() handles chunking internally
         await self.send_message(msg)
 
-    # ── 7. MORNING BRIEFING (enhanced with session schedule) ───
+    # ── 7. MORNING BRIEFING ────────────────────────────────────
 
     async def notify_morning_briefing(
         self,
@@ -361,9 +377,11 @@ class TelegramNotifier:
                 "New York": {"open": "12:00 UTC", "close": "21:00 UTC", "active": True},
             }
         """
-        msg = f"🌅 *AI TRADER — MORNING BRIEFING* 🌅\n\n🗓 *Date:* {_escape_markdown(date_str)}\n\n"
+        msg = (
+            f"🌅 *AI TRADER — MORNING BRIEFING* 🌅\n\n"
+            f"🗓 *Date:* {_escape_markdown(date_str)}\n\n"
+        )
 
-        # ── Session Schedule ──────────────────────────────────
         if session_schedule:
             msg += "🕐 *Trading Sessions Today:*\n"
             for session, info in session_schedule.items():
@@ -374,12 +392,11 @@ class TelegramNotifier:
                 )
             msg += "\n"
 
-        # ── High Impact Events ────────────────────────────────
         if high_impact_today:
             msg += "⚠️ *High Impact Events Today:*\n"
             pause_windows = []
             for e in high_impact_today:
-                vol = e.get("volatility", {})
+                vol       = e.get("volatility", {})
                 vol_level = vol.get("level", "?")
                 tag = "🔴" if vol_level in ("HIGH", "EXTREME") else "🔸"
                 msg += (
@@ -398,7 +415,6 @@ class TelegramNotifier:
         else:
             msg += "✅ No major high-impact events today — normal trading conditions.\n"
 
-        # ── Fundamental Bias ──────────────────────────────────
         if fundamental_scores:
             msg += "\n🌐 *Fundamental Bias:*\n"
             for cur, score in fundamental_scores.items():
@@ -412,6 +428,40 @@ class TelegramNotifier:
 
         msg += "\n🤖 _Have a profitable day!_"
         await self.send_message(msg)
+
+
+# ── Module-level shared notifier (used by command handlers) ───
+# FIX #3: cmd_daily no longer instantiates a new TelegramNotifier()
+# on every call — they all share this singleton instead.
+_shared_notifier: Optional[TelegramNotifier] = None
+
+
+def get_notifier() -> TelegramNotifier:
+    """Return (or lazily create) the shared TelegramNotifier instance."""
+    global _shared_notifier
+    if _shared_notifier is None:
+        _shared_notifier = TelegramNotifier()
+    return _shared_notifier
+
+
+# ── Shared reply helper for command handlers ──────────────────
+# FIX #2: All command handlers use this instead of reply_text()
+# with hardcoded ParseMode.MARKDOWN, so dynamic DB content is safe.
+
+async def _reply(update, text: str):
+    """
+    Reply to a Telegram update with Markdown, falling back to plain
+    text if parsing fails. Chunks long messages automatically.
+    """
+    for chunk in _chunk_message(text):
+        try:
+            await update.message.reply_text(chunk, parse_mode=ParseMode.MARKDOWN)
+        except Exception as e:
+            log.warning(f"⚠️ Markdown reply failed ({e}), retrying as plain text…")
+            try:
+                await update.message.reply_text(chunk)
+            except Exception as e2:
+                log.error(f"❌ Failed to reply to Telegram command: {e2}")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -431,7 +481,7 @@ async def cmd_start(update, context: ContextTypes.DEFAULT_TYPE):
         "ℹ️ /help — Show this message\n\n"
         "🧠 _Powered by AI Trading Engine_"
     )
-    await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+    await _reply(update, msg)
 
 
 async def cmd_help(update, context: ContextTypes.DEFAULT_TYPE):
@@ -442,12 +492,12 @@ async def cmd_help(update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_status(update, context: ContextTypes.DEFAULT_TYPE):
     """Full system status with portfolio snapshot."""
     try:
-        db = TraderDB()
+        db    = TraderDB()
         stats = db.get_overall_stats()
     except Exception:
         stats = {}
 
-    status_str = "⏸️ PAUSED" if IS_TRADING_PAUSED else "🚀 RUNNING"
+    status_str  = "⏸️ PAUSED" if IS_TRADING_PAUSED else "🚀 RUNNING"
     status_icon = "🟡" if IS_TRADING_PAUSED else "🟢"
 
     balance = stats.get("balance", 0)
@@ -472,46 +522,38 @@ async def cmd_status(update, context: ContextTypes.DEFAULT_TYPE):
         f"📂 *Open Positions:* {open_t}\n\n"
         f"🕐 *Last Check:* {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}"
     )
-    await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+    await _reply(update, msg)
 
 
 async def cmd_pause(update, context: ContextTypes.DEFAULT_TYPE):
     """Pause trading — sets IS_TRADING_PAUSED and invokes callback."""
     if IS_TRADING_PAUSED:
-        await update.message.reply_text(
-            "⏸️ Trading is *already paused*.",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        await _reply(update, "⏸️ Trading is *already paused*.")
         return
 
-    _set_trading_paused(True)
+    await _set_trading_paused(True)
     log.info("🛑 Trading paused via Telegram /pause command")
-
-    await update.message.reply_text(
+    await _reply(
+        update,
         "🛑 *TRADING PAUSED* 🛑\n\n"
         "No new trades will be executed.\n"
         "▶️ Use /resume to restart trading.",
-        parse_mode=ParseMode.MARKDOWN,
     )
 
 
 async def cmd_resume(update, context: ContextTypes.DEFAULT_TYPE):
     """Resume trading — clears IS_TRADING_PAUSED and invokes callback."""
     if not IS_TRADING_PAUSED:
-        await update.message.reply_text(
-            "🚀 Trading is *already running*.",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        await _reply(update, "🚀 Trading is *already running*.")
         return
 
-    _set_trading_paused(False)
+    await _set_trading_paused(False)
     log.info("▶️ Trading resumed via Telegram /resume command")
-
-    await update.message.reply_text(
+    await _reply(
+        update,
         "▶️ *TRADING RESUMED* ▶️\n\n"
-        "🤖 Scanning market for setups...\n"
+        "🤖 Scanning market for setups…\n"
         "🛑 Use /pause to stop at any time.",
-        parse_mode=ParseMode.MARKDOWN,
     )
 
 
@@ -519,16 +561,13 @@ async def cmd_calendar(update, context: ContextTypes.DEFAULT_TYPE):
     """Show this week's high-impact economic events."""
     try:
         from fundamental.news_filter import NewsFilter
-        nf = NewsFilter()
+        nf       = NewsFilter()
         calendar = nf.get_weekly_calendar()
     except Exception:
         calendar = None
 
     if not calendar:
-        await update.message.reply_text(
-            "📅 No major high-impact events found for this week.",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        await _reply(update, "📅 No major high-impact events found for this week.")
         return
 
     msg = "📅 *FOREX WEEKLY CALENDAR* 📅\n\n"
@@ -544,16 +583,16 @@ async def cmd_calendar(update, context: ContextTypes.DEFAULT_TYPE):
             )
         msg += "\n"
 
-    await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+    # _reply() handles chunking for long calendars
+    await _reply(update, msg)
 
 
 async def cmd_daily(update, context: ContextTypes.DEFAULT_TYPE):
     """Generate today's trading report on demand."""
     try:
-        db = TraderDB()
-        stats = db.get_overall_stats()
-        # Build a daily-style report from overall stats as a best-effort
-        pnl = stats.get("total_pnl", 0)
+        db      = TraderDB()
+        stats   = db.get_overall_stats()
+        pnl     = stats.get("total_pnl", 0)
         balance = stats.get("balance", 10000)
         pnl_pct = (pnl / 10000) * 100 if balance else 0
 
@@ -566,43 +605,66 @@ async def cmd_daily(update, context: ContextTypes.DEFAULT_TYPE):
             "pnl_pct":      pnl_pct,
         }
 
-        notifier = TelegramNotifier()
-        await notifier.notify_daily_report(report)
-        await update.message.reply_text(
-            "📊 Daily report sent above ☝️",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        # FIX #3: Use shared notifier, not a new instance
+        await get_notifier().notify_daily_report(report)
+        await _reply(update, "📊 Daily report sent above ☝️")
+
     except Exception as e:
-        await update.message.reply_text(
-            f"❌ Could not generate daily report: {e}",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        await _reply(update, f"❌ Could not generate daily report: {_escape_markdown(str(e))}")
 
 
 # ══════════════════════════════════════════════════════════════
 #  BOT STARTUP
 # ══════════════════════════════════════════════════════════════
-
 def start_telegram_bot_polling():
-    """
-    Call from main.py as a background thread or async task.
-    Registers all command handlers and starts long-polling.
-    """
     token = os.getenv("TELEGRAM_TOKEN")
     if not token:
         log.warning("⚠️ TELEGRAM_TOKEN not set — skipping bot polling.")
         return
 
-    app = Application.builder().token(token).build()
+    # ✅ নতুন event loop এ চালাও — main loop এর সাথে conflict হবে না
+    import threading
 
-    # Register command handlers
-    app.add_handler(CommandHandler("start",    cmd_start))
-    app.add_handler(CommandHandler("help",     cmd_help))
-    app.add_handler(CommandHandler("status",   cmd_status))
-    app.add_handler(CommandHandler("pause",    cmd_pause))
-    app.add_handler(CommandHandler("resume",   cmd_resume))
-    app.add_handler(CommandHandler("calendar", cmd_calendar))
-    app.add_handler(CommandHandler("daily",    cmd_daily))
+    def _run():
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-    log.info("🤖 Telegram Command Polling Started (7 commands registered)...")
-    app.run_polling(close_loop=False)
+        app = Application.builder().token(token).build()
+        app.add_handler(CommandHandler("start",    cmd_start))
+        app.add_handler(CommandHandler("help",     cmd_help))
+        app.add_handler(CommandHandler("status",   cmd_status))
+        app.add_handler(CommandHandler("pause",    cmd_pause))
+        app.add_handler(CommandHandler("resume",   cmd_resume))
+        app.add_handler(CommandHandler("calendar", cmd_calendar))
+        app.add_handler(CommandHandler("daily",    cmd_daily))
+
+        # ── Network-resilient error handler ────────────────────────
+        # When the network is down (DNS, getaddrinfo failed, proxy error,
+        # etc.), python-telegram-bot logs a full traceback every 5 seconds
+        # and floods the log.  Catch these specific errors and log a
+        # single compact line instead — the polling loop will auto-retry.
+        async def _on_error(update, context):
+            err = context.error
+            err_str = str(err)
+            is_network = any(s in err_str.lower() for s in (
+                "getaddrinfo", "connection", "timeout", "timed out",
+                "network", "dns", "unreachable", "refused", "reset",
+                "11001", "etimedout", "ehostunreach",
+            ))
+            if is_network:
+                # Compact one-line warning — no traceback spam.
+                log.warning(f"⚠️ Telegram network error (auto-retry): {err_str[:80]}")
+            else:
+                # Real error — log normally with traceback.
+                log.error(f"❌ Telegram error: {err}", exc_info=context.error)
+        app.add_error_handler(_on_error)
+
+        log.info("🤖 Telegram Bot Polling Started…")
+        try:
+            app.run_polling()  # এখন আলাদা thread এ চলবে
+        except Exception as e:
+            log.error(f"❌ Telegram polling crashed: {e}")
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
