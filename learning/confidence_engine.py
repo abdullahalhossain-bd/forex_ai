@@ -36,6 +36,16 @@ from utils.logger import get_logger
 
 log = get_logger("learning.confidence_engine")
 
+
+def _test_mode() -> bool:
+    """Lazy check for TEST_MODE flag. Returns False if config isn't
+    importable (e.g. during unit tests)."""
+    try:
+        from config import TEST_MODE
+        return bool(TEST_MODE)
+    except Exception:
+        return False
+
 # ── Storage ──────────────────────────────────────────────────
 PATTERN_STATS_PATH   = "memory/pattern_stats.json"
 CONFIDENCE_HIST_PATH = "memory/confidence_history.json"
@@ -562,10 +572,14 @@ class ConfidenceEngine:
         should_skip = score["should_skip"]
 
         # Decision logic
-        if should_skip:
+        # TEST_MODE: disable auto-skip entirely (so the system always emits
+        # a tradeable signal), and lower the WAIT threshold to 10 so
+        # confidence >= 10 flows through to MT5.
+        # Production: should_skip respected, WAIT threshold = 25.
+        if should_skip and not _test_mode():
             final_signal = "NO TRADE"
             decision = "SKIP"
-        elif final_conf < 25:   # Lowered from 45 to 25 to allow early trading phase
+        elif final_conf < (10 if _test_mode() else 25):
             final_signal = "WAIT"
             decision = "WAIT"
         else:

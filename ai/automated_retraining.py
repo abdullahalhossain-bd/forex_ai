@@ -9,7 +9,7 @@ import os
 import json
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Optional
 import pandas as pd
 import numpy as np
@@ -28,11 +28,16 @@ try:
 except ImportError:
     SKLEARN_AVAILABLE = False
 
+# `tensorflow` itself is unused in this module — only `keras` is.
+# Importing tensorflow at module load added ~3-5s of startup cost
+# (TF prints verbose GPU/CPU discovery logs even when not used).
+# We import keras directly; TF_AVAILABLE flag stays for downstream
+# feature detection.
 try:
-    import tensorflow as tf
     from tensorflow import keras
     TF_AVAILABLE = True
-except ImportError:
+except (ImportError, RuntimeError):
+    keras = None
     TF_AVAILABLE = False
 
 from config import Config

@@ -636,7 +636,9 @@ class SessionAnalyzer:
             return day < 25
 
     def _is_dead_zone(self, gmt_hour: int) -> bool:
-        from analysis.session_rules import DEAD_ZONES
+        # DEAD_ZONES is imported at module level (see top of file) — no
+        # need to re-import here. The previous local import shadowed the
+        # module-level binding and confused linters.
         for zone in DEAD_ZONES:
             if zone["start"] <= gmt_hour < zone["end"]:
                 return True

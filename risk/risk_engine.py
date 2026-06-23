@@ -17,10 +17,11 @@ DAILY_LOG_PATH = "memory/daily_risk.json"
 
 class RiskEngine:
 
-    MAX_RISK_PC      = 1.0
-    MIN_RR           = 2.0
-    DAILY_LOSS_LIMIT = 3.0
-    MAX_OPEN_TRADES  = 3
+    # Day 76c: Increased risk limits to allow more active trading
+    MAX_RISK_PC      = 2.0      # was 1.0, now 2% per trade (Day 76c)
+    MIN_RR           = 1.5      # was 2.0, now 1.5:1 (Day 76c)
+    DAILY_LOSS_LIMIT = 7.0      # was 3.0, now 7% daily (Day 76c)
+    MAX_OPEN_TRADES  = 10       # was 3, now 10 concurrent (Day 76c)
     ATR_SL_MULT      = 1.5
 
     def __init__(self, balance: float = 1000.0, symbol: str = "EURUSD"):

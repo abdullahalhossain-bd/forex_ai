@@ -92,7 +92,10 @@ class NewsFilter:
         events = self._fetch_events()
 
         if not events:
-            log.warning("Could not fetch live news — using safe fallback")
+            # Scraping Forex Factory failed — but blocking all trades because
+            # we can't scrape the calendar would be worse than trading blind.
+            # Safe fallback: ALLOW trades, just flag that news status is unknown.
+            log.warning("Could not fetch live news — using safe fallback (trade allowed)")
             return self._safe_result("News fetch failed — proceed with caution")
 
         now_utc = datetime.now(pytz.utc)

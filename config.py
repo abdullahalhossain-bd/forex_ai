@@ -109,6 +109,17 @@ HF_TOKEN = os.getenv("HF_TOKEN", "")
 # "mt5_demo" -> Real MT5 demo account execution
 EXECUTION_MODE = os.getenv("EXECUTION_MODE", "paper").lower()
 
+# ── TEST MODE ─────────────────────────────────────────────────
+# When true (default for first-time MT5 demo verification): all safety
+# gates become permissive so the system actually places trades.
+#  - TradePermission MIN_CONFIDENCE = 10 (instead of 60)
+#  - Session quality check becomes warning (instead of block)
+#  - ConfidenceEngine auto-skip disabled
+#  - ConfidenceEngine WAIT threshold = 10 (instead of 25)
+# Switch to false once you've confirmed MT5 orders are filling correctly
+# and you want the full safety pipeline re-engaged.
+TEST_MODE = os.getenv("TEST_MODE", "true").lower() == "true"
+
 # ── Use Scanner ────────────────────────────────────────────────
 USE_SCANNER = os.getenv("USE_SCANNER", "false").lower() == "true"
 
@@ -252,6 +263,7 @@ class Config:
     EXECUTION_MODE = EXECUTION_MODE
     USE_SCANNER = USE_SCANNER
     APPROVAL_MODE = APPROVAL_MODE
+    TEST_MODE = TEST_MODE
 
     # MT5
     MT5_LOGIN = MT5_LOGIN

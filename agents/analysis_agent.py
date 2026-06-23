@@ -19,6 +19,8 @@
 # macro picture দেয়, যাতে AI শুধু chart না দেখে গোটা market দেখে।
 # ============================================================
 
+from typing import Dict, Any, List, Optional
+
 from analysis.patterns import PatternDetector
 from analysis.support_resistance import SupportResistance
 from analysis.market_bias import MarketBiasEngine

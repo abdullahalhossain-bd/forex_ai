@@ -42,35 +42,48 @@ MAX_TOK = 1500
 try:
     from core.llm_key_manager import get_llm_key_manager
     _key_manager = get_llm_key_manager()
-    _groq_client = _key_manager.get_groq_client()
-    if _groq_client is not None:
-        MODEL = GROQ_MODEL
+    # Day 76: Swap priority — Gemini first (higher free limits), Groq as fallback
+    # Groq free tier = 100K tokens/day, Gemini = much higher, fewer rate limits
+    _gemini_client = _key_manager.get_gemini_client()
+    if _gemini_client is not None:
+        MODEL = GEMINI_MODEL
         LLM_AVAILABLE = True
-        _provider = "groq"
-        log.info(f"[MasterAnalyst] Groq client initialized | model={MODEL}")
+        _provider = "gemini"
+        log.info(f"[MasterAnalyst] Gemini client initialized (primary) | model={MODEL}")
     if not LLM_AVAILABLE:
-        _gemini_client = _key_manager.get_gemini_client()
-        if _gemini_client is not None:
-            MODEL = GEMINI_MODEL
-            LLM_AVAILABLE = True
-            _provider = "gemini"
-            log.info(f"[MasterAnalyst] Gemini client initialized (fallback) | model={MODEL}")
-except Exception as e:
-    log.warning(f"[MasterAnalyst] LLMKeyManager init failed: {e} — trying single-key")
-    groq_key = os.getenv("GROQ_API_KEY_1") or os.getenv("GROQ_API_KEY", "")
-    if groq_key:
-        try:
-            from groq import Groq
-            _groq_client = Groq(api_key=groq_key)
+        _groq_client = _key_manager.get_groq_client()
+        if _groq_client is not None:
             MODEL = GROQ_MODEL
             LLM_AVAILABLE = True
             _provider = "groq"
-            log.info(f"[MasterAnalyst] Groq client initialized (single-key) | model={MODEL}")
+            log.info(f"[MasterAnalyst] Groq client initialized (fallback) | model={MODEL}")
+except Exception as e:
+    log.warning(f"[MasterAnalyst] LLMKeyManager init failed: {e} — trying single-key")
+    # Day 76: Try Gemini first (single-key fallback)
+    gemini_key = os.getenv("GEMINI_API_KEY_1") or os.getenv("GEMINI_API_KEY", "")
+    if gemini_key:
+        try:
+            from google import genai as google_genai
+            _gemini_client = google_genai.Client(api_key=gemini_key)
+            MODEL = GEMINI_MODEL
+            LLM_AVAILABLE = True
+            _provider = "gemini"
+            log.info(f"[MasterAnalyst] Gemini client initialized (single-key primary) | model={MODEL}")
         except Exception as e2:
-            log.warning(f"[MasterAnalyst] Groq init failed: {e2}")
+            log.warning(f"[MasterAnalyst] Gemini init failed: {e2}")
+    # Fallback to Groq if Gemini not available
     if not LLM_AVAILABLE:
-        gemini_key = os.getenv("GEMINI_API_KEY_1") or os.getenv("GEMINI_API_KEY", "")
-        if gemini_key:
+        groq_key = os.getenv("GROQ_API_KEY_1") or os.getenv("GROQ_API_KEY", "")
+        if groq_key:
+            try:
+                from groq import Groq
+                _groq_client = Groq(api_key=groq_key)
+                MODEL = GROQ_MODEL
+                LLM_AVAILABLE = True
+                _provider = "groq"
+                log.info(f"[MasterAnalyst] Groq client initialized (single-key fallback) | model={MODEL}")
+            except Exception as e2:
+                log.warning(f"[MasterAnalyst] Groq init failed: {e2}")
             try:
                 from google import genai as google_genai
                 _gemini_client = google_genai.Client(api_key=gemini_key)
@@ -559,8 +572,40 @@ Before deciding BUY/SELL/WAIT, walk through these layers IN ORDER:
         import time as _time
         from core.llm_key_manager import log_llm_call_failure
 
-        # Primary: Groq (with multi-key retry)
+        # Day 76: Primary: Gemini (higher free limits), Fallback: Groq
+        # Try Gemini first (multi-key retry)
         max_retries = 3
+        for attempt in range(max_retries):
+            client = _gemini_client
+            if client is None and _key_manager is not None:
+                client = _key_manager.get_gemini_client()
+            if client is None:
+                log.debug("[MasterAnalyst] No Gemini client available (keys exhausted or missing)")
+                break
+            try:
+                full_prompt = f"{self._SYSTEM}\n\n{user_prompt}"
+                resp = client.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=full_prompt,
+                )
+                if _key_manager is not None:
+                    _key_manager.mark_gemini_success()
+                return resp.text.strip()
+            except Exception as e:
+                info = log_llm_call_failure(
+                    log, "Gemini", GEMINI_MODEL, attempt, max_retries, e
+                )
+                if _key_manager is not None:
+                    _key_manager.mark_gemini_failure(
+                        info["error_str"], info["rate_limited"]
+                    )
+                    import sys
+                    current_module = sys.modules[__name__]
+                    current_module._gemini_client = _key_manager.get_gemini_client()
+                if attempt < max_retries - 1:
+                    _time.sleep(1)
+
+        # Fallback: Groq (with multi-key retry)
         for attempt in range(max_retries):
             client = _groq_client
             if client is None and _key_manager is not None:
@@ -593,37 +638,6 @@ Before deciding BUY/SELL/WAIT, walk through these layers IN ORDER:
                     import sys
                     current_module = sys.modules[__name__]
                     current_module._groq_client = _key_manager.get_groq_client()
-                if attempt < max_retries - 1:
-                    _time.sleep(1)
-
-        # Fallback: Gemini (with multi-key retry)
-        for attempt in range(max_retries):
-            client = _gemini_client
-            if client is None and _key_manager is not None:
-                client = _key_manager.get_gemini_client()
-            if client is None:
-                log.error("[MasterAnalyst] No Gemini client available (keys exhausted or missing)")
-                break
-            try:
-                full_prompt = f"{self._SYSTEM}\n\n{user_prompt}"
-                resp = client.models.generate_content(
-                    model=GEMINI_MODEL,
-                    contents=full_prompt,
-                )
-                if _key_manager is not None:
-                    _key_manager.mark_gemini_success()
-                return resp.text.strip()
-            except Exception as e:
-                info = log_llm_call_failure(
-                    log, "Gemini", GEMINI_MODEL, attempt, max_retries, e
-                )
-                if _key_manager is not None:
-                    _key_manager.mark_gemini_failure(
-                        info["error_str"], info["rate_limited"]
-                    )
-                    import sys
-                    current_module = sys.modules[__name__]
-                    current_module._gemini_client = _key_manager.get_gemini_client()
                 if attempt < max_retries - 1:
                     _time.sleep(1)
 

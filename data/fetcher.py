@@ -7,31 +7,62 @@
 
 import pandas as pd
 import numpy as np
-import MetaTrader5 as mt5
 from utils.logger import get_logger
 
 log = get_logger(__name__)
 
 # ─────────────────────────────────────────────────────────────
+# MT5 AVAILABILITY GUARD
+# ─────────────────────────────────────────────────────────────
+# MetaTrader5 package is Windows-only. On Linux/Mac the import
+# would crash the whole project at module-load time. We guard it
+# here so DataFetcher still imports cleanly and falls back to
+# tvdatafeed / "unavailable" mode when MT5 isn't installed.
+try:
+    import MetaTrader5 as mt5
+    MT5_AVAILABLE = True
+except ImportError:
+    mt5 = None
+    MT5_AVAILABLE = False
+    log.info(
+        "MetaTrader5 package not installed — DataFetcher will use "
+        "tvdatafeed as fallback. Install MetaTrader5 on Windows with "
+        "MetaTrader 5 terminal running to enable MT5 data source."
+    )
+
+# ─────────────────────────────────────────────────────────────
 # MT5 TIMEFRAME MAPPING
 # ─────────────────────────────────────────────────────────────
-TIMEFRAME_MAP = {
-    "M5":   mt5.TIMEFRAME_M5,       # 5 minutes
-    "M15":  mt5.TIMEFRAME_M15,      # 15 minutes
-    "M30":  mt5.TIMEFRAME_M30,      # 30 minutes
-    "H1":   mt5.TIMEFRAME_H1,       # 1 hour
-    "H4":   mt5.TIMEFRAME_H4,       # 4 hours
-    "D1":   mt5.TIMEFRAME_D1,       # 1 day
-    "W1":   mt5.TIMEFRAME_W1,       # 1 week
-    "MN1":  mt5.TIMEFRAME_MN1,      # 1 month
-    # Aliases for backward compatibility
-    "5m":   mt5.TIMEFRAME_M5,
-    "15m":  mt5.TIMEFRAME_M15,
-    "30m":  mt5.TIMEFRAME_M30,
-    "1h":   mt5.TIMEFRAME_H1,
-    "4h":   mt5.TIMEFRAME_H4,
-    "1d":   mt5.TIMEFRAME_D1,
-}
+# Built lazily — only resolved when MT5 is available, so importing
+# this module on Linux/Mac (where MetaTrader5 is unavailable) doesn't
+# raise AttributeError on `mt5.TIMEFRAME_*`.
+TIMEFRAME_MAP = {}
+
+def _build_timeframe_map():
+    """Populate TIMEFRAME_MAP from live mt5 constants (called once, lazily)."""
+    if not MT5_AVAILABLE or TIMEFRAME_MAP:
+        return
+    TIMEFRAME_MAP.update({
+        "M5":   mt5.TIMEFRAME_M5,       # 5 minutes
+        "M15":  mt5.TIMEFRAME_M15,      # 15 minutes
+        "M30":  mt5.TIMEFRAME_M30,      # 30 minutes
+        "H1":   mt5.TIMEFRAME_H1,       # 1 hour
+        "H4":   mt5.TIMEFRAME_H4,       # 4 hours
+        "D1":   mt5.TIMEFRAME_D1,       # 1 day
+        "W1":   mt5.TIMEFRAME_W1,       # 1 week
+        "MN1":  mt5.TIMEFRAME_MN1,      # 1 month
+        # Aliases for backward compatibility
+        "5m":   mt5.TIMEFRAME_M5,
+        "15m":  mt5.TIMEFRAME_M15,
+        "30m":  mt5.TIMEFRAME_M30,
+        "1h":   mt5.TIMEFRAME_H1,
+        "4h":   mt5.TIMEFRAME_H4,
+        "1d":   mt5.TIMEFRAME_D1,
+    })
+
+# Populate immediately if MT5 is available; otherwise TIMEFRAME_MAP
+# stays empty and the fetcher will report "no data source available".
+_build_timeframe_map()
 
 # Symbol normalization — internal style to MT5 style
 # MT5 symbols are typically EURUSD, GBPUSD (no =X suffix)
@@ -98,16 +129,17 @@ class DataFetcher:
 
     def _detect_source(self):
         """Detect available data source."""
-        try:
-            # Try MT5 first
-            if mt5.initialize():
-                mt5.shutdown()  # Just test connection; will reinit in fetch()
-                return "mt5"
-        except Exception as e:
-            log.debug(f"MT5 not available: {e}")
+        # MT5 first — but only if the package is installed (Windows)
+        if MT5_AVAILABLE:
+            try:
+                if mt5.initialize():
+                    mt5.shutdown()  # Just test connection; will reinit in fetch()
+                    return "mt5"
+            except Exception as e:
+                log.debug(f"MT5 not available: {e}")
 
         try:
-            from tvdatafeed import TvDatafeed
+            from tvdatafeed import TvDatafeed  # noqa: F401
             return "tvdatafeed"
         except ImportError:
             log.debug("tvdatafeed not available")
@@ -152,15 +184,18 @@ class DataFetcher:
     def _fetch_mt5(self, symbol, timeframe, limit):
         """
         Fetch OHLCV data from MetaTrader5.
-        
+
         Args:
             symbol (str):     MT5 symbol name (e.g., "EURUSD")
             timeframe (str):  Timeframe key (e.g., "M15")
             limit (int):      Number of candles to fetch
-        
+
         Returns:
             pd.DataFrame: OHLCV data, or None on error
         """
+        if not MT5_AVAILABLE:
+            log.error("[MT5] MetaTrader5 package not installed — cannot fetch")
+            return None
         try:
             # Ensure MT5 is initialized
             if not mt5.initialize():

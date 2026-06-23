@@ -69,13 +69,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import (
-    Config, EXECUTION_MODE, USE_SCANNER, APPROVAL_MODE,
-    INITIAL_BALANCE, LOOP_INTERVAL_SEC,
-    BACKUP_INTERVAL_MIN, RECOVERY_COOLDOWN_MIN,
+    EXECUTION_MODE,
+    INITIAL_BALANCE,
     ENABLE_TELEGRAM, SYMBOLS, DEFAULT_TIMEFRAME,
-    validate_mt5_config, validate_telegram_config,
 )
-from core.constants import clean_symbol, LOGS_DIR, MEMORY_DIR, DATABASE_DIR
+from core.constants import clean_symbol, LOGS_DIR
 from core.lifecycle import Phase
 from core.runtime import boot_runtime, get_runtime
 
