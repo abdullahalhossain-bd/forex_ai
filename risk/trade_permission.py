@@ -28,11 +28,10 @@ class TradePermission:
         5. Confluence enough?
     """
 
-    # Day 76b: Relaxed thresholds for better signal flow
-    # Production threshold lowered from 60 to 35 (was too strict)
-    # TEST_MODE from 10 to 5 (allow very weak signals for testing)
-    MIN_CONFIDENCE_PROD  = 35
-    MIN_CONFIDENCE_TEST  = 5
+    # Production threshold is 60. In TEST_MODE we lower it to 10 so any
+    # LLM/rule signal the AI emits actually flows through to MT5.
+    MIN_CONFIDENCE_PROD  = 60
+    MIN_CONFIDENCE_TEST  = 10
 
     @property
     def MIN_CONFIDENCE(self) -> int:

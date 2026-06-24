@@ -78,7 +78,42 @@ class DecisionAgent:
         reasons  = []
         decision = "WAIT"
 
-        # Gates
+        # ── Day 81+ AGGRESSIVE TEST_MODE ──────────────────────────
+        # If TEST_MODE is true and analysis_agent already decided BUY/SELL,
+        # use that DIRECTLY. Skip the voting (which requires MIN_CONSENSUS=2,
+        # but when LLM is rate-limited, only 1 agent votes → no consensus →
+        # trade gets blocked even though analysis_agent said BUY/SELL).
+        _test_mode = False
+        try:
+            from config import TEST_MODE
+            _test_mode = bool(TEST_MODE)
+        except Exception:
+            pass
+
+        if _test_mode and final_signal in ("BUY", "SELL"):
+            # Use analysis_agent's signal directly
+            decision = final_signal
+            # Use rule_conf or master_conf as base confidence
+            base_conf = rule_conf if rule_conf > 0 else (master_conf if master_conf > 0 else 50)
+            adj_conf = max(10, min(95, base_conf))
+            # Day 81+ hotfix: fallback to ind_ctx price when master_entry is None
+            ind_ctx = market_out.get("ind_ctx", {}) or {}
+            fallback_price = ind_ctx.get("close") or ind_ctx.get("price") or 0
+            reasons = [
+                f"TEST_MODE: Using analysis_agent signal {final_signal} directly",
+                f"Rule: {rule_signal} ({rule_conf}%) | LLM: {llm_signal} ({llm_conf}%) | Master: {master_sig} ({master_conf}%)",
+                f"Confidence: {adj_conf}% (base={base_conf}%)",
+            ]
+            log.info(f"[DecisionAgent] TEST_MODE AGGRESSIVE: {decision} {adj_conf}% (bypassing voting)")
+            return self._result(
+                decision, adj_conf, risk_out, reasons,
+                entry=master_ctx.get("master_entry") or risk_out.get("entry") or fallback_price,
+                sl=master_ctx.get("master_sl") or risk_out.get("sl_price"),
+                tp=master_ctx.get("master_tp1") or risk_out.get("tp_price"),
+                pattern=pattern, pair=pair, timeframe=timeframe, regime=regime_label,
+            )
+
+        # Gates (only reached in non-TEST_MODE or when final_signal is not BUY/SELL)
         if not news_ok:
             return self._result("NO TRADE", 0, risk_out,
                 ["News window active — trading blocked"],
@@ -199,7 +234,14 @@ class DecisionAgent:
                     f"({old_conf}% → {adj_conf}%)"
                 )
 
-        entry = master_ctx.get("master_entry") or risk_out.get("entry")
+        # Day 81+ hotfix: When LLM is unavailable, master_entry/sl/tp are
+        # all None, and risk_out is a placeholder (entry=None). Fallback
+        # to the actual close price from market_out's ind_ctx so the
+        # RiskEngine gets a real price to compute SL/TP from.
+        ind_ctx = market_out.get("ind_ctx", {}) or {}
+        fallback_price = ind_ctx.get("close") or ind_ctx.get("price") or 0
+
+        entry = master_ctx.get("master_entry") or risk_out.get("entry") or fallback_price
         sl    = master_ctx.get("master_sl")    or risk_out.get("sl_price")
         tp    = master_ctx.get("master_tp1")   or risk_out.get("tp_price")
 

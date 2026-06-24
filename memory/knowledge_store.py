@@ -52,8 +52,14 @@ def _make_embedding_function():
         log.warning(f"[KnowledgeStore] ONNX embedding failed: {e}")
 
     # Option 2: SentenceTransformer (check local cache first, then use HF_TOKEN)
+    # Day 81+ — Trigger shared cache so the model downloads exactly once
+    # across TradeMemory + KnowledgeStore + MistakeAnalyzer.
     try:
-        from sentence_transformers import SentenceTransformer as _ST
+        from memory.sentence_model_cache import get_sentence_model
+        shared = get_sentence_model()  # populates HF cache on first call
+        # We still create a ChromaDB embedding function via the standard API,
+        # but the model files are now cached locally so no re-download.
+        from sentence_transformers import SentenceTransformer as _ST  # noqa: F401
 
         model_name = "all-MiniLM-L6-v2"
         # Check multiple cache locations
@@ -119,19 +125,52 @@ class KnowledgeStore:
             # function explicitly to override whatever was stored previously.
             # This prevents ChromaDB from trying to use the old SentenceTransformer
             # embedding (which needs HuggingFace download → 401 error).
+            #
+            # Day 81+ hotfix: previously this used `get_collection` first and
+            # fell back to `create_collection`. That pattern fails with
+            # "Collection already exists" if ChromaDB's internal state lags
+            # (e.g. another process created it, or a prior run left it).
+            # `get_or_create_collection` is the canonical atomic way — it
+            # returns the existing collection if present, otherwise creates
+            # it, all in one call.
+            #
+            # Day 81+ hotfix #2: ChromaDB still throws "Embedding function
+            # conflict" when the existing collection was created with a
+            # DIFFERENT embedding function (e.g. sentence_transformer from
+            # an older run, vs onnx_mini_lm_l6_v2 now). We catch this
+            # specific conflict and DELETE the old collection, then recreate
+            # with the current embedding function. This is safe because the
+            # knowledge store is just a cache of trade-lesson embeddings —
+            # it gets re-populated as the bot trades.
+            collection_kwargs = {"name": "trading_memory"}
+            if self.ef is not None:
+                collection_kwargs["embedding_function"] = self.ef
             try:
-                collection_kwargs = {"name": "trading_memory"}
-                if self.ef is not None:
-                    collection_kwargs["embedding_function"] = self.ef
-                self.collection = self.client.get_collection(**collection_kwargs)
-                log.info(f"[KnowledgeStore] Loaded existing collection | Memories: {self.collection.count()}")
-            except Exception:
-                # Collection doesn't exist — create it with our embedding function
-                collection_kwargs = {"name": "trading_memory"}
-                if self.ef is not None:
-                    collection_kwargs["embedding_function"] = self.ef
-                self.collection = self.client.create_collection(**collection_kwargs)
-                log.info(f"[KnowledgeStore] Created new collection | Memories: 0")
+                self.collection = self.client.get_or_create_collection(**collection_kwargs)
+                log.info(f"[KnowledgeStore] Collection ready | Memories: {self.collection.count()}")
+            except Exception as conflict_err:
+                err_msg = str(conflict_err).lower()
+                if ("embedding function" in err_msg and "conflict" in err_msg) \
+                   or "already exists" in err_msg:
+                    log.warning(
+                        f"[KnowledgeStore] Embedding conflict detected — deleting old "
+                        f"collection and recreating with current embedding function. "
+                        f"(Old memories will be re-learned as the bot trades.)"
+                    )
+                    try:
+                        self.client.delete_collection(name="trading_memory")
+                        self.collection = self.client.create_collection(**collection_kwargs)
+                        log.info(
+                            f"[KnowledgeStore] Collection recreated with new embedding | "
+                            f"Memories: 0 (will repopulate as bot trades)"
+                        )
+                    except Exception as recreate_err:
+                        log.error(
+                            f"[KnowledgeStore] Recreate after delete also failed: {recreate_err}"
+                        )
+                        raise
+                else:
+                    raise
 
         except Exception as e:
             log.error(f"[KnowledgeStore] Init failed: {e} — knowledge store disabled")

@@ -134,22 +134,18 @@ class SignalFusion:
 
         result.master_confidence = round(weighted_conf, 1)
 
-        # Day 76b: More permissive agreement rules — allow single-layer signals
+        # Determine final signal based on agreement
         if len(agreeing) >= 3:
             result.final_signal = majority
-        elif len(agreeing) == 2:
+        elif len(agreeing) == 2 and len(signals) <= 3:
             # 2/3 or 2/4 — allow with reduced confidence
             if weighted_conf >= self.REDUCED_THRESHOLD:
                 result.final_signal = majority
             else:
                 result.final_signal = "WAIT"
-        elif len(agreeing) == 1:
-            # Day 76b: 1/4 agreement — allow with very small position if confidence >= 40%
-            if weighted_conf >= 40 and not result.has_conflict:
-                result.final_signal = majority
-                result.explanation.append(f"Single layer vote + {weighted_conf:.0f}% confidence")
-            else:
-                result.final_signal = "WAIT"
+        elif len(agreeing) == 2 and len(signals) == 4:
+            # 2/4 — not enough
+            result.final_signal = "WAIT"
         else:
             result.final_signal = "WAIT"
 

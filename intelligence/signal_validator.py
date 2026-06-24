@@ -103,7 +103,7 @@ class SignalValidator:
         should_trade = (
             len(block_reasons) == 0
             and score.final_direction in ("BUY", "SELL")
-            and score.setup_quality in ("A+", "A", "B", "C", "D")  # Day 76b: added D for very weak signals
+            and score.setup_quality in ("A+", "A", "B")
         )
 
         return {
@@ -117,30 +117,21 @@ class SignalValidator:
     # ── Individual gates ────────────────────────────────────────────
 
     def _gate_confluence_quality(self, score: ConfluenceScore) -> ValidationResult:
-        """Gate 1: Setup quality must be A+, A, B, C, or D (AVOID is hard block).
-        
-        Day 76d: Only block AVOID if net_score <= 0. If net_score > 0, allow it 
-        as a weak D-grade signal instead.
-        """
-        if score.setup_quality == "AVOID" and score.net_score <= 0:
+        """Gate 1: Setup quality must be A+, A, or B."""
+        if score.setup_quality == "AVOID":
             return ValidationResult(
                 gate="confluence",
                 passed=False,
                 severity="BLOCK",
-                reason=f"Setup quality AVOID with no direction (net={score.net_score:.2f}, aligned={score.aligned_factors})",
+                reason=f"Setup quality AVOID (net={score.net_score}, aligned={score.aligned_factors})",
                 details={"setup_quality": score.setup_quality, "net_score": score.net_score},
             )
-        # Recalculate if needed: convert AVOID with net_score>0 to D-grade
-        if score.setup_quality == "AVOID" and abs(score.net_score) >= 1:
-            score.setup_quality = "D"
-            score.confidence = max(score.confidence, 15.0)  # ensure minimum confidence for weak signals
-        
         return ValidationResult(
             gate="confluence",
             passed=True,
             severity="OK",
             reason=f"Setup quality {score.setup_quality}",
-            details={"setup_quality": score.setup_quality, "net_score": score.net_score},
+            details={"setup_quality": score.setup_quality},
         )
 
     def _gate_factor_count(self, score: ConfluenceScore) -> ValidationResult:

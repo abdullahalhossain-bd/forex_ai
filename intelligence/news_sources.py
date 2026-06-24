@@ -86,10 +86,12 @@ CENTRAL_BANK_EVENTS = [
 ]
 
 # ── RSS feeds (financial news) ──────────────────────────────────────
+# Day 81+ hotfix: Reuters feed (feeds.reuters.com) is permanently dead
+# (Reuters discontinued public RSS years ago — DNS no longer resolves).
+# Removed from the list to silence the noise. DailyFX, ForexLive, and
+# Investing remain — they need `lxml` installed for BeautifulSoup to
+# parse XML:  pip install lxml
 RSS_FEEDS = [
-    # Reuters forex
-    {"source": "reuters", "currency": "ALL",
-     "url": "https://feeds.reuters.com/reuters/businessNews"},
     # DailyFX forex
     {"source": "dailyfx", "currency": "ALL",
      "url": "https://www.dailyfx.com/feeds/all"},
@@ -99,6 +101,9 @@ RSS_FEEDS = [
     # Investing.com forex news
     {"source": "investing", "currency": "ALL",
      "url": "https://www.investing.com/rss/news_25.rss"},
+    # MarketWatch — replacement for Reuters (top stories)
+    {"source": "marketwatch", "currency": "ALL",
+     "url": "https://feeds.content.dowjones.io/public/rss/mw_topstories"},
 ]
 
 # ── Cache + freshness window ────────────────────────────────────────
@@ -294,7 +299,15 @@ class NewsSources:
                 resp = self.session.get(feed["url"], timeout=8)
                 if resp.status_code != 200:
                     continue
-                soup = BeautifulSoup(resp.content, "xml")
+                # Day 81+ hotfix: prefer lxml for XML, fall back to html.parser
+                # if lxml isn't installed. Without lxml, BeautifulSoup can't
+                # parse RSS feeds (the "xml" parser is lxml-backed).
+                try:
+                    soup = BeautifulSoup(resp.content, "xml")
+                except Exception:
+                    # lxml not installed — try html.parser (works for most
+                    # RSS feeds since they're loosely-XML)
+                    soup = BeautifulSoup(resp.content, "html.parser")
                 for entry in soup.find_all("item")[:max_per_feed]:
                     title = entry.find("title")
                     link = entry.find("link")

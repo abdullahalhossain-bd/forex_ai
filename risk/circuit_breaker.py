@@ -37,12 +37,12 @@ class CircuitBreaker:
         cb.record_result("LOSS")
     """
 
-    # Day 76c: Relaxed thresholds for more active trading
-    MAX_CONSECUTIVE_LOSSES = 10     # was 3, now 10 losses before pause (Day 76c)
-    MAX_DAILY_LOSS_PCT     = 10.0   # was 3%, now 10% daily loss (Day 76c)
-    MIN_WIN_RATE_THRESHOLD = 20.0   # was 30%, now 20% win rate (Day 76c)
-    COOLDOWN_HOURS         = 1      # was 4, now 1 hour (Day 76c)
-    LOOKBACK_TRADES        = 20     # was 10, now 20 trades for stats (Day 76c)
+    # Thresholds
+    MAX_CONSECUTIVE_LOSSES = 3      # ৩টা loss → pause
+    MAX_DAILY_LOSS_PCT     = 3.0    # ৩% daily loss → pause
+    MIN_WIN_RATE_THRESHOLD = 30.0   # ৩০% এর নিচে → learning mode
+    COOLDOWN_HOURS         = 4      # pause এর পরে কত ঘণ্টা wait
+    LOOKBACK_TRADES        = 10     # win rate চেক করার জন্য কতটা পিছনে
 
     def __init__(self, balance: float = 1000.0):
         self.balance = balance

@@ -475,7 +475,7 @@ class FibonacciEngine:
         elif ratio <= 0.618:
             zone = 'GOLDEN_ZONE'          # 50-61.8 is the golden zone
         elif ratio <= 0.786:
-            zone = 'DEEP_RETRACEMENT'
+            zone = 'OTE_ZONE'             # Day 81+ — OTE (Optimal Trade Entry) 61.8-78.6%
         elif ratio <= 1.0:
             zone = 'NEAR_SWING_LOW'
         else:
@@ -488,6 +488,9 @@ class FibonacciEngine:
             'ratio':         round(ratio, 4),
             'zone':          zone,
             'in_golden_zone': 0.500 <= ratio <= 0.618,
+            # Day 81+ — OTE (Optimal Trade Entry) zone: 61.8%-78.6%
+            # This is the ICT "sweet spot" for sniper entries.
+            'in_ote_zone':   0.618 <= ratio <= 0.786,
         }
 
     # ═══════════════════════════════════════════════════════════
@@ -700,6 +703,8 @@ class FibonacciEngine:
             'fib_level_near_price':   position.get('nearest_price'),
             'fib_level_near_pips':    position.get('nearest_pips'),
             'fib_in_golden':          position.get('in_golden_zone', False),
+            # Day 81+ — OTE zone for ICT sniper entries
+            'fib_in_ote':             position.get('in_ote_zone', False),
             'fib_confluence':         len(conf_z),
             'fib_confluence_strength': top_conf.get('strength', 0),
             'fib_confluence_note':    top_conf.get('note', ''),

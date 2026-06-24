@@ -80,7 +80,7 @@ class ConfluenceDecision:
         """Format a Telegram signal alert. Returns None if not tradeable."""
         if not self.should_trade:
             return None
-        quality_emoji = {"A+": "🌟", "A": "✅", "B": "⚠️", "C": "⚡", "D": "🟡"}.get(self.setup_quality, "❓")
+        quality_emoji = {"A+": "🌟", "A": "✅", "B": "⚠️"}.get(self.setup_quality, "❓")
         dir_emoji = "🟢" if self.direction == "BUY" else "🔴"
         factors_str = "\n".join(
             f"  {'✅' if f['direction'] == self.direction else '❌'} {f['name']}: {f['direction']} ({f['strength']:.0f}%)"

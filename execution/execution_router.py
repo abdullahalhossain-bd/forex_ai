@@ -34,6 +34,38 @@ from config import validate_mt5_config
 log = get_logger("execution_router")
 
 
+def _check_absolute_safety(symbol: str) -> tuple[bool, str]:
+    """Day 81+ ABSOLUTE_SAFETY hard gate.
+
+    These checks run BEFORE any trade is sent to MT5, regardless of
+    TRADING_MODE / TEST_MODE.  They are the last line of defense
+    against:
+      - broker disconnect
+      - spread explosion (news just hit)
+      - market closed
+
+    Returns (safe, reason).  When ABSOLUTE_SAFETY=false, this function
+    is skipped entirely (returns True).
+    """
+    try:
+        from config import ABSOLUTE_SAFETY
+        if not ABSOLUTE_SAFETY:
+            return True, "ABSOLUTE_SAFETY disabled"
+    except Exception:
+        pass  # if config can't be imported, default to running the check
+
+    try:
+        from data.live_feed import get_live_feed
+        feed = get_live_feed()
+        safe, reason = feed.is_safe_to_trade(symbol)
+        if not safe:
+            log.warning(f"[ABSOLUTE_SAFETY] BLOCKED {symbol}: {reason}")
+        return safe, reason
+    except Exception as e:
+        log.debug(f"[ABSOLUTE_SAFETY] check failed (allowing): {e}")
+        return True, "safety check unavailable"
+
+
 class ExecutionRouter:
     """
     Single entry point — DecisionAgent-এর result dict নিয়ে MT5 demo
@@ -110,6 +142,18 @@ class ExecutionRouter:
         lot       = decision_result.get("lot", 0.01)
         sl        = decision_result.get("sl")
         tp        = decision_result.get("tp")
+
+        # ── Day 81+ ABSOLUTE_SAFETY hard gate ────────────────────
+        # Runs BEFORE account_manager.trading_permission() because
+        # broker-side problems (spread explosion, disconnect) are
+        # more fundamental than risk-engine approval.
+        safe, reason = _check_absolute_safety(symbol)
+        if not safe:
+            log.warning(
+                f"[ExecutionRouter] ABSOLUTE_SAFETY blocked trade — "
+                f"{symbol} {direction}: {reason}"
+            )
+            return None
 
         perm = self._account_manager.trading_permission(
             symbol=symbol,

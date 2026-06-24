@@ -160,7 +160,7 @@ class DecisionScorer:
         )
 
         # Setup quality rating (only if direction is BUY/SELL)
-        # Day 76d: Ultra-relaxation — even 0% aligned factors can be D-grade if net_score > 0
+        # Lowered thresholds — original was too strict, blocking most trades.
         if result.final_direction in ("BUY", "SELL"):
             aligned_pct = (result.aligned_factors / max(result.total_factors, 1)) * 100
             abs_net = abs(result.net_score)
@@ -170,17 +170,10 @@ class DecisionScorer:
                 result.setup_quality = "A"
             elif aligned_pct >= 25 and abs_net >= 10:
                 result.setup_quality = "B"
-            elif aligned_pct >= 15 and abs_net >= 5:  # C-grade: 15% aligned
-                result.setup_quality = "C"
-            elif abs_net >= 1:   # Day 76d: D-grade now requires ONLY abs_net >= 1 (can be 0% aligned)
-                result.setup_quality = "D"
             else:
                 result.setup_quality = "AVOID"
-            # Base confidence: even aligned=0 gets 15% if net_score > 0
-            if abs_net > 0:
-                result.confidence = min(95.0, max(15.0, 20.0 + abs_net * 0.8))
-            else:
-                result.confidence = 5.0
+            # Base confidence from net score — lowered starting point from 40 to 30
+            result.confidence = min(95.0, 30.0 + abs_net * 0.9)
         else:
             result.setup_quality = "AVOID"
             result.confidence = 0.0

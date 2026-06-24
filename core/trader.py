@@ -392,7 +392,29 @@ class AITrader:
             risk_out["position_sizing"] = sizing.to_dict()
 
             # Apply the sizer's verdict.
-            if not sizing.approved:
+            # Day 81+ hotfix: In TEST_MODE, don't let PositionSizer reject
+            # trades. The sizer checks Kelly criterion, volatility, drawdown,
+            # correlation, etc. — all of which fail on a fresh account with
+            # no trade history (Kelly needs win_rate, drawdown needs history,
+            # etc.). In TEST_MODE, force-approve with minimum lot.
+            _test_mode_sizer = False
+            try:
+                from config import TEST_MODE
+                _test_mode_sizer = bool(TEST_MODE)
+            except Exception:
+                pass
+
+            if not sizing.approved and _test_mode_sizer:
+                log.info(
+                    f"[Day 76 Sizer] REJECTED {self.symbol} {direction} — {sizing.reject_reason} — "
+                    f"BUT TEST_MODE=true, force-approving with lot=0.01"
+                )
+                risk_out["approved"] = True
+                risk_out["lot"] = 0.01
+                risk_out["risk_usd"] = round(self.balance * 0.01, 2)
+                risk_out["risk_pc"] = 1.0
+                risk_out["reject_reason"] = None
+            elif not sizing.approved:
                 log.info(
                     f"[Day 76 Sizer] REJECTED {self.symbol} {direction} — {sizing.reject_reason}"
                 )
@@ -437,6 +459,30 @@ class AITrader:
         log.info("━" * 52)
         t0 = time.time()
 
+        # ── Day 81+ — Start signal pipeline debugger for this cycle ──
+        try:
+            from monitoring.signal_debugger import get_signal_debugger
+            debugger = get_signal_debugger()
+            debugger.start_cycle(self.symbol, self.timeframe)
+        except Exception:
+            debugger = None
+
+        # ── Day 84+ — Trade frequency controller (early bail if daily cap hit) ──
+        try:
+            from risk.trade_frequency import get_trade_frequency_controller
+            freq_ctrl = get_trade_frequency_controller()
+            if auto_paper_trade and not freq_ctrl.can_trade_now():
+                if debugger:
+                    debugger.record("frequency_ctrl", "BLOCK",
+                                    f"Daily cap {freq_ctrl.trade_count_today()}/max")
+                    debugger.record_final("NO_TRADE", "Daily trade cap reached")
+                    debugger.log_cycle_summary()
+                    debugger.save_to_file()
+                log.warning("[Frequency] Daily trade cap hit — skipping cycle")
+                return self._error_result("Daily trade cap reached")
+        except Exception:
+            freq_ctrl = None
+
         session_ctx = SessionAnalyzer().get_current_session()
         latest_price = None
 
@@ -448,10 +494,22 @@ class AITrader:
             # common (market closed, symbol temporarily unavailable) and
             # would spam the user. Just log locally.
             log.warning(f"[Market] {self.symbol} data fetch failed — skipping this cycle")
+            if debugger:
+                debugger.record("market_data", "ERROR", market_out.get("error", "fetch_failed"))
+                debugger.record_final("NO_TRADE", "Market data fetch failed")
+                debugger.log_cycle_summary()
+                debugger.save_to_file()
             return self._error_result(f"Market Agent: {market_out['error']}")
 
+        # Record market data success
+        if debugger:
+            ind_ctx = market_out.get("ind_ctx", {}) or {}
+            debugger.record("market_data", "OK",
+                            f"price={ind_ctx.get('close', '?')} trend={ind_ctx.get('trend', '?')}")
+
         ind = market_out.get("ind_ctx", {})
-        latest_price = ind.get("close")
+        # Day 81+ hotfix: Indicators.get_ai_context() uses "price" key, not "close"
+        latest_price = ind.get("close") or ind.get("price")
         candle_time = self._extract_candle_time(market_out)
         closed_now = []
 
@@ -466,6 +524,11 @@ class AITrader:
         cb_check = self._circuit_breaker.allow_trade()
         if not cb_check["allowed"]:
             log.warning(f"[CircuitBreaker] {cb_check['mode']} — {cb_check['reason']}")
+            if debugger:
+                debugger.record("circuit_breaker", "BLOCK", f"{cb_check['mode']}: {cb_check['reason']}")
+                debugger.record_final("NO_TRADE", f"CircuitBreaker: {cb_check['reason']}")
+                debugger.log_cycle_summary()
+                debugger.save_to_file()
             self._publish("risk.circuit_breaker", {
                 "symbol": self.symbol, "mode": cb_check["mode"], "reason": cb_check["reason"],
             })
@@ -483,6 +546,8 @@ class AITrader:
             result["reject_reason"] = f"Circuit breaker [{cb_check['mode']}]: {cb_check['reason']}"
             self._print_final(result)
             return result
+        if debugger:
+            debugger.record("circuit_breaker", "OK", "Trade allowed")
 
         # Day 72 fix: Removed candle dedup check that was blocking ALL pairs.
         # The old logic compared candle_time with _last_decision_candle and
@@ -528,7 +593,21 @@ class AITrader:
             )
 
         log.info("[4/9] Decision Agent...")
-        entry = analysis_out["signal"].get("entry") or ind.get("close", 0)
+        # Day 81+ hotfix: analysis_out may come from an early-return path
+        # (dead zone, error, etc.) that doesn't include a "signal" key.
+        # Use defensive `.get()` so we never raise KeyError here.
+        # _build_result() already uses `.get("signal", {})` for the same
+        # reason — this brings run_cycle() in line with that pattern.
+        signal_data = analysis_out.get("signal") or {}
+        # Day 81+ hotfix #2: when LLM is unavailable (all Groq keys
+        # rate-limited, Gemini auth failed), master_ctx.master_entry
+        # is None, so signal_data["entry"] is None. The fallback to
+        # ind.get("close", 0) returns 0 if ind_ctx.close is missing,
+        # which causes the RiskEngine to compute SL/TP around 0 (e.g.
+        # SL=-0.00072, TP=0.00144) — a guaranteed instant stop-out.
+        # Use latest_price (already extracted from market_out above)
+        # as the second-tier fallback so entry is always a real price.
+        entry = signal_data.get("entry") or ind.get("close") or ind.get("price") or latest_price or 0
         # Day 72 fix: normalize STRONG_BUY/STRONG_SELL to BUY/SELL for approved check
         _final_norm = analysis_out.get("final_signal", "WAIT")
         if "STRONG_BUY" in str(_final_norm):
@@ -545,6 +624,10 @@ class AITrader:
         }
         dec_out = self._decision.decide(market_out, analysis_out, placeholder_risk)
         self._decision.print_summary(dec_out)
+        if debugger:
+            debugger.record("decision",
+                            dec_out.get("decision", "WAIT"),
+                            f"conf={dec_out.get('confidence', 0):.0f}%")
 
         log.info("[5/9] Risk Engine...")
         risk_out = self._risk.evaluate(
@@ -554,6 +637,14 @@ class AITrader:
             regime=market_out["regime"],
         )
         self._risk.print_summary(risk_out)
+        if debugger:
+            risk_status = "OK" if risk_out.get("approved") else "REJECT"
+            # Day 81+ crash fix: reject_reason can be None (not a string),
+            # so we can't do [:20] on it directly. Coerce to string first.
+            _reject_reason = risk_out.get("reject_reason") or "approved"
+            debugger.record("risk", risk_status,
+                            f"lot={risk_out.get('lot', 0)} "
+                            f"reason={str(_reject_reason)[:20]}")
 
         daily = self._risk.get_daily_summary()
         log.info(
@@ -612,6 +703,10 @@ class AITrader:
                 )
 
         self._perm.print_summary(perm_out)
+        if debugger:
+            perm_status = "OK" if perm_out.get("allowed") else "BLOCK"
+            debugger.record("permission", perm_status,
+                            f"{perm_out.get('passed', 0)}/{perm_out.get('total', 0)} checks")
 
         log.info("[7/9] Learning Agent...")
         self._learn.save_decision(dec_out, analysis_out, market_out)
@@ -770,6 +865,24 @@ class AITrader:
             )
 
         self._print_final(result)
+
+        # ── Day 81+ — Record final outcome in signal debugger ──
+        if debugger:
+            final_action = result.get("final_action") or result.get("decision", "WAIT")
+            reject_reason = result.get("reject_reason", "")
+            debugger.record_final(final_action, reject_reason)
+            debugger.log_cycle_summary()
+            debugger.save_to_file()
+
+        # ── Day 84+ — Record trade in frequency controller ──
+        if freq_ctrl:
+            _final_for_freq = result.get("final_action")
+            if _final_for_freq in ("BUY", "SELL"):
+                try:
+                    freq_ctrl.record_trade(symbol=self.symbol, direction=_final_for_freq)
+                except Exception:
+                    pass
+
         # ── Day 37+ professional: log every decision to trade journal ──
         try:
             from core.professional_tools import get_trade_journal, JournalEntry
@@ -790,7 +903,7 @@ class AITrader:
                 lot=float(result.get("lot", 0) or 0),
                 rr_ratio=float(result.get("rr", 0) or 0),
                 risk_usd=float(result.get("risk_usd", 0) or 0),
-                reason=str(result.get("reject_reason", ""))[:200],
+                reason=str(result.get("reject_reason") or "")[:200],
                 llm_analysis=str(result.get("llm_analysis", ""))[:500],
                 master_analysis=str(result.get("master_analysis", ""))[:500],
             )
@@ -976,7 +1089,9 @@ class AITrader:
             "confidence": dec_out.get("confidence"),
             "trade_allowed": perm_out["allowed"],
             "final_action": perm_out["final_action"],
-            "entry": risk_out.get("entry"),
+            # Day 81+ hotfix: ensure entry is never None/0 — use dec_out's entry
+            # (which has the ind_ctx fallback) if risk_out lost it
+            "entry": risk_out.get("entry") or dec_out.get("entry") or entry,
             "sl": risk_out.get("sl_price"),
             "tp": risk_out.get("tp_price"),
             "sl_pips": risk_out.get("sl_pips", 0),

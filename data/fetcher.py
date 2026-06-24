@@ -128,8 +128,18 @@ class DataFetcher:
         log.info(f"[OK] DataFetcher initialized | source: {self.source}")
 
     def _detect_source(self):
-        """Detect available data source."""
-        # MT5 first — but only if the package is installed (Windows)
+        """Detect available data source.
+
+        Day 81+ architecture change: MT5 is now the SINGLE SOURCE OF TRUTH.
+        TradingView (tvdatafeed) fallback is intentionally disabled because
+        trading on data from source A while executing on broker B causes
+        data/execution mismatch (different spreads, tick timing, liquidity).
+
+        If MT5 is unavailable, the fetcher returns "unavailable" and the
+        trading cycle aborts — this is by design.  Do NOT re-enable the
+        TradingView fallback without a corresponding execution-side
+        fallback (i.e. paper trading).
+        """
         if MT5_AVAILABLE:
             try:
                 if mt5.initialize():
@@ -138,12 +148,17 @@ class DataFetcher:
             except Exception as e:
                 log.debug(f"MT5 not available: {e}")
 
-        try:
-            from tvdatafeed import TvDatafeed  # noqa: F401
-            return "tvdatafeed"
-        except ImportError:
-            log.debug("tvdatafeed not available")
+        # TradingView fallback DISABLED — see docstring above.
+        # try:
+        #     from tvdatafeed import TvDatafeed  # noqa: F401
+        #     return "tvdatafeed"
+        # except ImportError:
+        #     log.debug("tvdatafeed not available")
 
+        log.warning(
+            "[DataFetcher] MT5 unavailable and TradingView fallback is disabled. "
+            "Install MetaTrader5 on Windows with MT5 terminal running to enable data."
+        )
         return "unavailable"
 
     def fetch_ohlcv(self, symbol="EURUSD", timeframe="M15", limit=300, periods=None):

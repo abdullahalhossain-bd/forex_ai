@@ -45,15 +45,14 @@ class ConfidenceResult:
 class ConfidenceScaler:
     """Confidence-based position size scaling."""
 
-    # Day 76c: Lowered confidence thresholds to allow weaker signals
+    # Confidence thresholds and multipliers
     THRESHOLDS = [
         (95, 1.8, "EXCEPTIONAL"),
-        (85, 1.5, "VERY_HIGH"),
-        (75, 1.3, "HIGH"),
-        (65, 1.0, "NORMAL"),
-        (50, 0.8, "ACCEPTABLE"),      # was 65, now 50 (Day 76c)
-        (35, 0.5, "MARGINAL"),        # was 55, now 35 (Day 76c)
-        (20, 0.25, "WEAK"),           # NEW: below 35% still allowed (Day 76c)
+        (90, 1.5, "VERY_HIGH"),
+        (85, 1.3, "HIGH"),
+        (75, 1.0, "NORMAL"),
+        (65, 0.8, "ACCEPTABLE"),
+        (55, 0.5, "MARGINAL"),
     ]
 
     def scale(self, confidence: float) -> ConfidenceResult:

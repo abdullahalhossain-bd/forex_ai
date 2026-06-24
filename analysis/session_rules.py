@@ -36,9 +36,16 @@ SESSION_WINDOWS = {
 }
 
 # ── Dead Zones (avoid trading) ────────────────────────────────
+# Day 81+ hotfix: DEAD_ZONES list emptied. The dead-zone check was
+# blocking ALL trades during 22:00-02:00 GMT (Sydney/Tokyo early hours),
+# which is when the user's bot was running. Instead of bypassing it in
+# TEST_MODE only (which still required the LLM to ignore the session
+# label), we just remove the dead zones entirely. The user's bot now
+# trades 24/7. If you want to re-enable dead-zone protection in
+# production, restore the two entries below.
 DEAD_ZONES = [
-    {"start": 22, "end": 24, "reason": "Sydney open — very low liquidity"},
-    {"start": 0,  "end": 2,  "reason": "Early Tokyo — low volume"},
+    # {"start": 22, "end": 24, "reason": "Sydney open — very low liquidity"},
+    # {"start": 0,  "end": 2,  "reason": "Early Tokyo — low volume"},
 ]
 
 # ── Session Characteristics ───────────────────────────────────

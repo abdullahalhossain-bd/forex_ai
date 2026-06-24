@@ -88,8 +88,14 @@ class TradeMemory:
         self._vectors: np.ndarray | None = None
         self._metadata: list[dict] = []
 
-        # Model load — failure এ None থাকবে, system crash করবে না
-        self._model = _load_embedding_model(self.MODEL_NAME)
+        # Day 81+ — Use shared model cache so the SentenceTransformer
+        # downloads exactly once across TradeMemory + KnowledgeStore +
+        # MistakeAnalyzer. Saves ~6s per duplicate boot.
+        try:
+            from memory.sentence_model_cache import get_sentence_model
+            self._model = get_sentence_model()
+        except Exception:
+            self._model = _load_embedding_model(self.MODEL_NAME)  # legacy fallback
         if self._model is not None:
             log.info(f"[TradeMemory] Embedding model ready: {self.MODEL_NAME}")
         else:

@@ -80,15 +80,77 @@ class AnalysisAgent:
         session_ctx = self.session_analyzer.get_ai_context(session_result)
 
         # Dead zone guard — trade block
-        if session_result["session_info"]["is_dead_zone"]:
+        # Day 81+ hotfix: in TEST_MODE, we bypass the dead zone so the
+        # bot actually places trades during off-hours for MT5 verification.
+        # Production should keep this block — dead zones are real risk.
+        _skip_dead_zone = False
+        try:
+            from config import TEST_MODE
+            _skip_dead_zone = bool(TEST_MODE)
+        except Exception:
+            pass
+
+        if _skip_dead_zone and session_result["session_info"]["is_dead_zone"]:
+            log.info(
+                f"[AnalysisAgent] ⚠️ DEAD ZONE at {session_ctx['gmt_time']} — "
+                f"BYPASSED (TEST_MODE=true). Pipeline continues for MT5 testing."
+            )
+            # Mark session_ctx so downstream consumers know we're in dead-zone-bypass
+            session_ctx["dead_zone_bypassed"] = True
+        elif session_result["session_info"]["is_dead_zone"]:
             log.info(f"[AnalysisAgent] ⛔ DEAD ZONE at {session_ctx['gmt_time']} — pipeline paused")
+            # Day 81+ hotfix: include ALL downstream keys with safe defaults
+            # so trader.py's `analysis_out["signal"].get("entry")` doesn't
+            # raise KeyError. Every key that the success-path return at
+            # the bottom of this function includes must also be present
+            # here — otherwise trader.py crashes when it tries to read
+            # them off the dead-zone dict.
             return {
-                "df":           df,
-                "final_signal": "NO TRADE",
-                "session":      session_result,
-                "session_ctx":  session_ctx,
-                "dead_zone":    True,
-                "dead_zone_reason": "Low liquidity dead zone — no trades",
+                "df":                df,
+                "pat_ctx":           {},
+                "advanced_patterns": {},
+                "advanced_pat_ctx":  {},
+                "sr_result":         {"support_zones": [], "resistance_zones": []},
+                "sr_ctx":            {},
+                "fib_result":        {},
+                "fib_ctx":           {},
+                "bias_result":       {},
+                "bias_ctx":          {},
+                # signal_result normally has shape {signal, confidence, entry, ...}
+                # Provide minimal safe defaults so callers don't crash.
+                "signal":            {"signal": "NO TRADE", "confidence": 0, "entry": None},
+                "signal_ctx":        {},
+                "llm":               {"signal": "WAIT", "confidence": 0},
+                "llm_ctx":           {},
+                "news":              {"trade_allowed": True, "news_reason": "dead zone"},
+                "news_ctx":          {"news_trade_allowed": True, "news_reason": "dead zone"},
+                "sentiment":         {},
+                "sentiment_ctx":     {"sentiment_bias": "NEUTRAL", "sentiment_score": 0},
+                "conflict":          {"has_conflict": False, "confidence_adjustment": 0},
+                "smc":               {},
+                "smc_ctx":           {},
+                "vision":            {},
+                "vision_ctx":        {},
+                "vision_fusion":     {},
+                "session":           session_result,
+                "session_ctx":       session_ctx,
+                "intermarket":       {},
+                "intermarket_ctx":   {},
+                "macro_fusion":      {},
+                "master":            {},
+                "master_ctx":        {"master_signal": "WAIT", "master_confidence": 0},
+                "news_intelligence": {},
+                "confluence":        {},
+                "feature_vector":    {},
+                "ml_prediction":     {},
+                "ensemble":          {},
+                "rl_agent":          {},
+                "master_decision":   {},
+                "final_signal":      "NO TRADE",
+                # Dead-zone-specific metadata (consumed by trader.py for
+                # reject_reason formatting)
+                "dead_zone":         True,
+                "dead_zone_reason":  "Low liquidity dead zone — no trades",
             }
 
         # ── 1. Candlestick Patterns ───────────────────────────
@@ -306,8 +368,36 @@ class AnalysisAgent:
         # ── Final Signal Resolution ───────────────────────────
         final_signal = signal_result["signal"]
 
+        # Day 81+ AGGRESSIVE TEST_MODE: If TEST_MODE is true and the rule engine
+        # has a tradeable signal (BUY/SELL/STRONG_BUY/STRONG_SELL with conf >= 30),
+        # USE IT DIRECTLY. Skip all the MasterAnalyst/news/session/conflict gates
+        # that were blocking trades. This is the "just trade something" mode for
+        # verifying MT5 execution end-to-end.
+        _test_mode = False
+        try:
+            from config import TEST_MODE
+            _test_mode = bool(TEST_MODE)
+        except Exception:
+            pass
+
+        rule_sig_raw = signal_result.get("signal", "WAIT")
+        rule_conf = signal_result.get("confidence", 0)
+        rule_sig_normalized = rule_sig_raw
+        if "STRONG_BUY" in str(rule_sig_raw):
+            rule_sig_normalized = "BUY"
+        elif "STRONG_SELL" in str(rule_sig_raw):
+            rule_sig_normalized = "SELL"
+
+        if _test_mode and rule_sig_normalized in ("BUY", "SELL") and rule_conf >= 30:
+            final_signal = rule_sig_normalized
+            log.info(
+                f"[AnalysisAgent] -> {final_signal} "
+                f"(TEST_MODE AGGRESSIVE: Rule={rule_sig_raw} {rule_conf}% — "
+                f"bypassing MasterAnalyst/news/session gates)"
+            )
+
         # Day 63: Session dead zone / strategy gate
-        if not session_result["trade_allowed"]:
+        elif not session_result["trade_allowed"]:
             final_signal = "NO TRADE"
             log.info(
                 f"[AnalysisAgent] -> NO TRADE "
@@ -327,14 +417,25 @@ class AnalysisAgent:
             final_signal = "NO TRADE"
             log.info("[AnalysisAgent] -> NO TRADE (vision/quant conflict — low confidence)")
 
-        elif master_ctx.get("master_signal") in ("BUY", "SELL", "WAIT"):
+        elif master_ctx.get("master_signal") in ("BUY", "SELL", "WAIT", "STRONG_BUY", "STRONG_SELL"):
             ma_signal    = master_ctx["master_signal"]
-            # If master returns WAIT but rule signal is BUY/SELL with good confidence, use rule signal
+            # If master returns WAIT but rule signal is BUY/SELL/STRONG_BUY/STRONG_SELL
+            # with good confidence, use rule signal instead of letting master override.
+            # Day 81+ hotfix: previously only "BUY"/"SELL" were checked, but the rule
+            # engine also returns "STRONG_BUY"/"STRONG_SELL" — those were falling through
+            # to the else branch and getting overridden by master's WAIT.
             rule_sig = signal_result.get("signal", "WAIT")
             rule_conf = signal_result.get("confidence", 0)
-            if ma_signal == "WAIT" and rule_sig in ("BUY", "SELL") and rule_conf >= 30:
-                final_signal = rule_sig
-                log.info(f"[AnalysisAgent] -> {final_signal} (Rule signal: {rule_conf}% conf, master WAIT)")
+            # Normalize STRONG_BUY → BUY, STRONG_SELL → SELL for the final signal
+            rule_sig_normalized = rule_sig
+            if "STRONG_BUY" in str(rule_sig):
+                rule_sig_normalized = "BUY"
+            elif "STRONG_SELL" in str(rule_sig):
+                rule_sig_normalized = "SELL"
+
+            if ma_signal == "WAIT" and rule_sig_normalized in ("BUY", "SELL") and rule_conf >= 30:
+                final_signal = rule_sig_normalized
+                log.info(f"[AnalysisAgent] -> {final_signal} (Rule signal: {rule_sig} {rule_conf}% conf, master WAIT — rule override)")
             else:
                 final_signal = "NO TRADE" if ma_signal == "WAIT" else ma_signal
                 log.info(f"[AnalysisAgent] -> {final_signal} (MasterAnalyst override)")
@@ -344,7 +445,21 @@ class AnalysisAgent:
         # After MasterAnalyst decides, run NewsIntelligence to:
         #   1. BLOCK the trade if pair is in a high-impact event window
         #   2. ADJUST confidence based on news bias alignment
+        #
+        # Day 81+ hotfix: In TEST_MODE, skip the news block (but still
+        # log it as a warning). The news intelligence module fetches
+        # central-bank events from a hardcoded schedule which can produce
+        # false-positive "CPI in 0min" blocks even when the actual
+        # ForexFactory calendar is empty. This was blocking every trade
+        # during certain GMT hours.
         news_intel_ctx = {}
+        _skip_news_block = False
+        try:
+            from config import TEST_MODE
+            _skip_news_block = bool(TEST_MODE)
+        except Exception:
+            pass
+
         try:
             from intelligence.news_ai import get_news_intelligence
             # Use the symbol passed in market_output (or fallback to EURUSD)
@@ -360,14 +475,24 @@ class AnalysisAgent:
             # 1. Block check
             block_check = news_ai.should_block_trade(symbol)
             if block_check["blocked"] and final_signal in ("BUY", "SELL"):
-                log.warning(
-                    f"[AnalysisAgent] -> NO TRADE (Day 66 News block: {block_check['reason']})"
-                )
-                final_signal = "NO TRADE"
-                news_intel_ctx = {
-                    "blocked": True,
-                    "block_reason": block_check["reason"],
-                }
+                if _skip_news_block:
+                    log.warning(
+                        f"[AnalysisAgent] News block detected ({block_check['reason']}) — "
+                        f"BYPASSED (TEST_MODE=true). Trade continues."
+                    )
+                    news_intel_ctx = {
+                        "blocked": False,
+                        "block_reason": f"{block_check['reason']} (TEST_MODE bypassed)",
+                    }
+                else:
+                    log.warning(
+                        f"[AnalysisAgent] -> NO TRADE (Day 66 News block: {block_check['reason']})"
+                    )
+                    final_signal = "NO TRADE"
+                    news_intel_ctx = {
+                        "blocked": True,
+                        "block_reason": block_check["reason"],
+                    }
             else:
                 # 2. Confidence adjustment
                 if final_signal in ("BUY", "SELL"):
@@ -452,10 +577,14 @@ class AnalysisAgent:
 
             # Day 67 override: only block if confluence says AVOID (not B or higher)
             # Made more permissive: B quality trades are now allowed through.
+            # Day 81+ hotfix: In TEST_MODE, don't let Confluence AVOID block trades.
             if not decision.should_trade and final_signal in ("BUY", "SELL"):
-                # Only block if setup quality is AVOID (worst)
-                # B quality = proceed with reduced confidence
-                if decision.setup_quality == "AVOID":
+                if _test_mode:
+                    log.info(
+                        f"[AnalysisAgent] Day 67 Confluence: {final_signal} quality={decision.setup_quality} — "
+                        f"BYPASSED (TEST_MODE=true)"
+                    )
+                elif decision.setup_quality == "AVOID":
                     log.info(
                         f"[AnalysisAgent] Day 67 Confluence: {final_signal} → NO TRADE "
                         f"(quality=AVOID, {decision.block_reason or 'failed validation'})"
@@ -622,14 +751,22 @@ class AnalysisAgent:
             # WAIT from ensemble now allows the original signal to proceed
             # if it had decent confidence from MasterAnalyst.
             if ensemble_decision.abstained:
-                log.warning(
-                    f"[AnalysisAgent] Day 70 Ensemble ABSTAINED: "
-                    f"{ensemble_decision.abstain_reason}"
-                )
-                final_signal = "NO TRADE"
+                if _test_mode:
+                    log.info(
+                        f"[AnalysisAgent] Day 70 Ensemble ABSTAINED: "
+                        f"{ensemble_decision.abstain_reason} — "
+                        f"BYPASSED (TEST_MODE=true), keeping {final_signal}"
+                    )
+                else:
+                    log.warning(
+                        f"[AnalysisAgent] Day 70 Ensemble ABSTAINED: "
+                        f"{ensemble_decision.abstain_reason}"
+                    )
+                    final_signal = "NO TRADE"
             elif ensemble_decision.decision == "WAIT":
                 # Don't automatically block — only block if confidence is very low
-                if ensemble_decision.confidence < 40:
+                # Day 81+ hotfix: In TEST_MODE, never let Ensemble WAIT block a trade
+                if ensemble_decision.confidence < 40 and not _test_mode:
                     if final_signal in ("BUY", "SELL"):
                         log.info(
                             f"[AnalysisAgent] Day 70 Ensemble → WAIT "
@@ -637,10 +774,11 @@ class AnalysisAgent:
                         )
                         final_signal = "NO TRADE"
                 else:
-                    # WAIT with decent confidence — let the original signal pass
+                    # WAIT with decent confidence OR TEST_MODE — let the original signal pass
                     log.info(
                         f"[AnalysisAgent] Day 70 Ensemble WAIT but conf={ensemble_decision.confidence:.0f}% — "
                         f"allowing original signal {final_signal}"
+                        + (" (TEST_MODE)" if _test_mode else "")
                     )
             elif ensemble_decision.decision in ("BUY", "SELL"):
                 # Ensemble confirms a trade — use its fused confidence
@@ -698,10 +836,14 @@ class AnalysisAgent:
 
             # ── RL override logic ────────────────────────────────────
             # The RL agent can VETO a trade — but only if confidence is very low (< 40%)
-            # Made more permissive: original blocked anything below 55%, now only below 40%.
+            # Day 81+ hotfix: In TEST_MODE, never let RL VETO block a trade.
             if final_signal in ("BUY", "SELL") and rl_action.action_name == "HOLD":
-                # Check if the RL agent has a strong reason to veto
-                if ensemble_conf < 40:
+                if _test_mode:
+                    log.info(
+                        f"[AnalysisAgent] Day 71 RL suggests HOLD — "
+                        f"BYPASSED (TEST_MODE=true), keeping {final_signal}"
+                    )
+                elif ensemble_conf < 40:
                     log.warning(
                         f"[AnalysisAgent] Day 71 RL VETO: Ensemble said {final_signal} "
                         f"but conf={ensemble_conf:.0f}% < 40% — {rl_action.reason[:80]}"
@@ -769,6 +911,12 @@ class AnalysisAgent:
             master_decision_ctx = master_decision.to_dict()
 
             # Day 73 override: the master decision is the FINAL signal
+            # Day 81+ hotfix: In TEST_MODE, don't let MasterDecisionEngine
+            # override a BUY/SELL signal that was already set by the
+            # AGGRESSIVE TEST_MODE path. The whole point of TEST_MODE is
+            # to force trades through for MT5 verification — MasterDecision
+            # (which aggregates rule+ML+RL+LLM) will almost always say WAIT
+            # because LLM is rate-limited and ML models aren't trained yet.
             if master_decision.final_signal in ("BUY", "SELL"):
                 final_signal = master_decision.final_signal
                 try:
@@ -786,12 +934,20 @@ class AnalysisAgent:
                     f"{' | OVERRIDE: ' + master_decision.override_reason if master_decision.override_reason else ''}"
                 )
             elif master_decision.final_signal == "WAIT" and final_signal in ("BUY", "SELL"):
-                log.info(
-                    f"[AnalysisAgent] Day 73 Master Decision → WAIT "
-                    f"(agreement {master_decision.agreement}, conf {master_decision.master_confidence:.0f}%)"
-                )
-                if master_decision.override_reason:
-                    final_signal = "NO TRADE"
+                if _test_mode:
+                    log.info(
+                        f"[AnalysisAgent] Day 73 Master Decision → WAIT "
+                        f"(agreement {master_decision.agreement}) — "
+                        f"BUT TEST_MODE=true, keeping {final_signal}"
+                    )
+                    # Don't override — keep the BUY/SELL from AGGRESSIVE TEST_MODE
+                else:
+                    log.info(
+                        f"[AnalysisAgent] Day 73 Master Decision → WAIT "
+                        f"(agreement {master_decision.agreement}, conf {master_decision.master_confidence:.0f}%)"
+                    )
+                    if master_decision.override_reason:
+                        final_signal = "NO TRADE"
         except Exception as e:
             log.warning(f"[AnalysisAgent] Day 73 MasterDecisionEngine failed: {e}")
             master_decision_ctx = {"error": str(e)}

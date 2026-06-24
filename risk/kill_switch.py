@@ -36,13 +36,13 @@ STATE_PATH = Path("memory/kill_switch_state.json")
 class KillSwitch:
     """3-level emergency brake with persistent state."""
 
-    # Day 76c: Relaxed thresholds for more active trading
-    DAILY_LOSS_LIMIT = 0.10       # was 3%, now 10% daily loss (Day 76c)
-    WEEKLY_LOSS_LIMIT = 0.20      # was 8%, now 20% weekly loss (Day 76c)
-    MAX_DRAWDOWN_LIMIT = 0.30     # was 15%, now 30% total drawdown (Day 76c)
-    DAILY_COOLDOWN_HOURS = 2      # was 16, now 2 hours (Day 76c)
-    WEEKLY_COOLDOWN_DAYS = 2      # was 7, now 2 days (Day 76c)
-    DRAWDOWN_COOLDOWN_DAYS = 7    # was 30, now 7 days (Day 76c)
+    # Default thresholds
+    DAILY_LOSS_LIMIT = 0.03       # 3% daily loss
+    WEEKLY_LOSS_LIMIT = 0.08      # 8% weekly loss
+    MAX_DRAWDOWN_LIMIT = 0.15     # 15% total drawdown
+    DAILY_COOLDOWN_HOURS = 16     # rest of trading day + overnight
+    WEEKLY_COOLDOWN_DAYS = 7      # 1 week pause
+    DRAWDOWN_COOLDOWN_DAYS = 30   # manual reset required
 
     def __init__(self):
         self._lock = threading.RLock()

@@ -615,6 +615,12 @@ def main() -> int:
                         help="Output JSON instead of human-readable text")
     parser.add_argument("--verbose", action="store_true",
                         help="Show info lines even on OK checks")
+    parser.add_argument("--skip-trace", action="store_true",
+                        help="Skip the detailed trade pipeline trace at the end")
+    parser.add_argument("--trace-symbols", type=str, default="EURUSD",
+                        help="Comma-separated symbols for the trace (default: EURUSD)")
+    parser.add_argument("--timeframe", type=str, default="15m",
+                        help="Timeframe for the trace (default: 15m)")
     args = parser.parse_args()
 
     print()
@@ -692,6 +698,27 @@ def main() -> int:
             for e in r.errors:
                 print(f"      [{r.category}] {e}")
     print()
+
+    # ── Day 81+ — Detailed trade condition trace ───────────────────
+    # This is the most important check for "why isn't my bot trading?".
+    # It runs one real run_cycle() per symbol and prints EACH stage's
+    # verdict (OK/WAIT/REJECT/BLOCK) so you can see EXACTLY which
+    # condition killed the trade.
+    if not args.quick and not args.skip_trace:
+        print(_c("=" * 70, "bold"))
+        print(_c("  DETAILED TRADE CONDITION TRACE", "bold"))
+        print(_c("  (per-symbol stage-by-stage trace — see EXACTLY where signals die)", "cyan"))
+        print(_c("=" * 70, "bold"))
+        try:
+            from monitoring.trade_pipeline_tracer import trace_symbol, print_trace
+            trace_syms = args.trace_symbols.split(",") if args.trace_symbols else ["EURUSD"]
+            trace_syms = [s.strip().upper() for s in trace_syms if s.strip()]
+            for sym in trace_syms:
+                print_trace(trace_symbol(sym, args.timeframe))
+        except Exception as e:
+            print(_c(f"  Trace failed: {type(e).__name__}: {e}", "red"))
+        print()
+
 
     if args.json:
         print(_c("--- JSON output ---", "gray"))

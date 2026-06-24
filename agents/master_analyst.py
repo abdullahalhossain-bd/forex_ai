@@ -42,48 +42,48 @@ MAX_TOK = 1500
 try:
     from core.llm_key_manager import get_llm_key_manager
     _key_manager = get_llm_key_manager()
-    # Day 76: Swap priority — Gemini first (higher free limits), Groq as fallback
-    # Groq free tier = 100K tokens/day, Gemini = much higher, fewer rate limits
-    _gemini_client = _key_manager.get_gemini_client()
-    if _gemini_client is not None:
-        MODEL = GEMINI_MODEL
+    _groq_client = _key_manager.get_groq_client()
+    if _groq_client is not None:
+        MODEL = GROQ_MODEL
         LLM_AVAILABLE = True
-        _provider = "gemini"
-        log.info(f"[MasterAnalyst] Gemini client initialized (primary) | model={MODEL}")
+        _provider = "groq"
+        log.info(f"[MasterAnalyst] Groq client initialized | model={MODEL}")
     if not LLM_AVAILABLE:
-        _groq_client = _key_manager.get_groq_client()
-        if _groq_client is not None:
-            MODEL = GROQ_MODEL
-            LLM_AVAILABLE = True
-            _provider = "groq"
-            log.info(f"[MasterAnalyst] Groq client initialized (fallback) | model={MODEL}")
-except Exception as e:
-    log.warning(f"[MasterAnalyst] LLMKeyManager init failed: {e} — trying single-key")
-    # Day 76: Try Gemini first (single-key fallback)
-    gemini_key = os.getenv("GEMINI_API_KEY_1") or os.getenv("GEMINI_API_KEY", "")
-    if gemini_key:
-        try:
-            from google import genai as google_genai
-            _gemini_client = google_genai.Client(api_key=gemini_key)
+        _gemini_client = _key_manager.get_gemini_client()
+        if _gemini_client is not None:
             MODEL = GEMINI_MODEL
             LLM_AVAILABLE = True
             _provider = "gemini"
-            log.info(f"[MasterAnalyst] Gemini client initialized (single-key primary) | model={MODEL}")
+            log.info(f"[MasterAnalyst] Gemini client initialized (fallback) | model={MODEL}")
+        # Day 81+ hotfix: warn loudly if the Gemini key format looks wrong.
+        # Valid Gemini API keys start with "AIza" (39 chars total).
+        # If the user pasted an OAuth token (starts with "AQ." or "ya29.")
+        # or a service-account key, the genai client will silently construct
+        # but every call will return 401 UNAUTHENTICATED.
+        gemini_key_check = os.getenv("GEMINI_API_KEY_1") or os.getenv("GEMINI_API_KEY", "")
+        if gemini_key_check and not gemini_key_check.startswith("AIza"):
+            log.warning(
+                f"[MasterAnalyst] Gemini key format looks wrong — starts with "
+                f"'{gemini_key_check[:4]}', expected 'AIza'. Get a valid key from "
+                f"https://aistudio.google.com/app/apikey (it should be 39 chars, "
+                f"format: AIzaSy...). Current key will return 401 UNAUTHENTICATED."
+            )
+except Exception as e:
+    log.warning(f"[MasterAnalyst] LLMKeyManager init failed: {e} — trying single-key")
+    groq_key = os.getenv("GROQ_API_KEY_1") or os.getenv("GROQ_API_KEY", "")
+    if groq_key:
+        try:
+            from groq import Groq
+            _groq_client = Groq(api_key=groq_key)
+            MODEL = GROQ_MODEL
+            LLM_AVAILABLE = True
+            _provider = "groq"
+            log.info(f"[MasterAnalyst] Groq client initialized (single-key) | model={MODEL}")
         except Exception as e2:
-            log.warning(f"[MasterAnalyst] Gemini init failed: {e2}")
-    # Fallback to Groq if Gemini not available
+            log.warning(f"[MasterAnalyst] Groq init failed: {e2}")
     if not LLM_AVAILABLE:
-        groq_key = os.getenv("GROQ_API_KEY_1") or os.getenv("GROQ_API_KEY", "")
-        if groq_key:
-            try:
-                from groq import Groq
-                _groq_client = Groq(api_key=groq_key)
-                MODEL = GROQ_MODEL
-                LLM_AVAILABLE = True
-                _provider = "groq"
-                log.info(f"[MasterAnalyst] Groq client initialized (single-key fallback) | model={MODEL}")
-            except Exception as e2:
-                log.warning(f"[MasterAnalyst] Groq init failed: {e2}")
+        gemini_key = os.getenv("GEMINI_API_KEY_1") or os.getenv("GEMINI_API_KEY", "")
+        if gemini_key:
             try:
                 from google import genai as google_genai
                 _gemini_client = google_genai.Client(api_key=gemini_key)
@@ -382,6 +382,24 @@ Before deciding BUY/SELL/WAIT, walk through these layers IN ORDER:
         preferred_pairs  = session_ctx.get("preferred_pairs", [])
         gmt_time         = session_ctx.get("gmt_time", "N/A")
 
+        # Day 81+ hotfix: In TEST_MODE, hide the dead_zone flag from the LLM
+        # so it actually produces a tradeable signal during off-hours.
+        # Without this, the LLM sees is_dead_zone=true (or current_session
+        # = "DEAD_ZONE") and returns WAIT regardless of the technical
+        # analysis — it follows the "DEAD_ZONE → WAIT" rule in its prompt.
+        if is_dead_zone or curr_session == "DEAD_ZONE":
+            try:
+                from config import TEST_MODE
+                if TEST_MODE:
+                    is_dead_zone = False
+                    curr_session = "TOKYO"  # relabel so LLM doesn't see DEAD_ZONE
+                    sess_trade_ok = True
+                    sess_strategy = "RANGE_TRADING"
+                    # Lower minimum confidence in test mode so signal passes
+                    sess_min_conf = min(sess_min_conf, 30)
+            except Exception:
+                pass
+
         # ── Intermarket / Macro (Day 65) ───────────────────────
         dxy_trend         = intermarket_ctx.get("dxy_trend", "NEUTRAL")
         dxy_change        = intermarket_ctx.get("dxy_change_pct", 0)
@@ -572,40 +590,8 @@ Before deciding BUY/SELL/WAIT, walk through these layers IN ORDER:
         import time as _time
         from core.llm_key_manager import log_llm_call_failure
 
-        # Day 76: Primary: Gemini (higher free limits), Fallback: Groq
-        # Try Gemini first (multi-key retry)
+        # Primary: Groq (with multi-key retry)
         max_retries = 3
-        for attempt in range(max_retries):
-            client = _gemini_client
-            if client is None and _key_manager is not None:
-                client = _key_manager.get_gemini_client()
-            if client is None:
-                log.debug("[MasterAnalyst] No Gemini client available (keys exhausted or missing)")
-                break
-            try:
-                full_prompt = f"{self._SYSTEM}\n\n{user_prompt}"
-                resp = client.models.generate_content(
-                    model=GEMINI_MODEL,
-                    contents=full_prompt,
-                )
-                if _key_manager is not None:
-                    _key_manager.mark_gemini_success()
-                return resp.text.strip()
-            except Exception as e:
-                info = log_llm_call_failure(
-                    log, "Gemini", GEMINI_MODEL, attempt, max_retries, e
-                )
-                if _key_manager is not None:
-                    _key_manager.mark_gemini_failure(
-                        info["error_str"], info["rate_limited"]
-                    )
-                    import sys
-                    current_module = sys.modules[__name__]
-                    current_module._gemini_client = _key_manager.get_gemini_client()
-                if attempt < max_retries - 1:
-                    _time.sleep(1)
-
-        # Fallback: Groq (with multi-key retry)
         for attempt in range(max_retries):
             client = _groq_client
             if client is None and _key_manager is not None:
@@ -638,6 +624,37 @@ Before deciding BUY/SELL/WAIT, walk through these layers IN ORDER:
                     import sys
                     current_module = sys.modules[__name__]
                     current_module._groq_client = _key_manager.get_groq_client()
+                if attempt < max_retries - 1:
+                    _time.sleep(1)
+
+        # Fallback: Gemini (with multi-key retry)
+        for attempt in range(max_retries):
+            client = _gemini_client
+            if client is None and _key_manager is not None:
+                client = _key_manager.get_gemini_client()
+            if client is None:
+                log.error("[MasterAnalyst] No Gemini client available (keys exhausted or missing)")
+                break
+            try:
+                full_prompt = f"{self._SYSTEM}\n\n{user_prompt}"
+                resp = client.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=full_prompt,
+                )
+                if _key_manager is not None:
+                    _key_manager.mark_gemini_success()
+                return resp.text.strip()
+            except Exception as e:
+                info = log_llm_call_failure(
+                    log, "Gemini", GEMINI_MODEL, attempt, max_retries, e
+                )
+                if _key_manager is not None:
+                    _key_manager.mark_gemini_failure(
+                        info["error_str"], info["rate_limited"]
+                    )
+                    import sys
+                    current_module = sys.modules[__name__]
+                    current_module._gemini_client = _key_manager.get_gemini_client()
                 if attempt < max_retries - 1:
                     _time.sleep(1)
 
@@ -752,27 +769,44 @@ Before deciding BUY/SELL/WAIT, walk through these layers IN ORDER:
             weighted -= 4
 
         # Dead zone penalty (should not reach here normally)
+        # Day 81+ hotfix: in TEST_MODE, skip the dead zone penalty so
+        # the confidence doesn't get zeroed out during off-hours.
         if session_ctx.get("is_dead_zone"):
-            weighted = 0
+            try:
+                from config import TEST_MODE
+                if not TEST_MODE:
+                    weighted = 0
+            except Exception:
+                weighted = 0  # default: penalize if config can't be loaded
 
         return max(0, min(99, round(weighted)))
 
     def _fallback_result(self, signal: dict, reason: str) -> dict:
         sig  = signal.get("signal", "WAIT")
         conf = signal.get("confidence", 0)
+        # Day 81+ hotfix: when LLM is unavailable (rate-limited, auth failed),
+        # the MasterAnalyst should NOT return WAIT if the rule engine has a
+        # strong BUY/SELL signal. Use the rule signal directly with its
+        # confidence. This is the "rule-engine fallback" path — the rule
+        # engine already did all the technical analysis, so its signal is
+        # valid even without LLM confirmation.
+        # Also extract entry/sl/tp from the rule signal if available.
+        entry = signal.get("entry")
+        sl    = signal.get("sl")
+        tp    = signal.get("tp")
         return {
-            "market_story":     f"LLM unavailable — using rule engine signal: {sig}",
+            "market_story":     f"LLM unavailable — using rule engine signal: {sig} ({conf}%)",
             "key_levels":       [],
             "trade_plan": {
                 "signal":     sig,
-                "entry":      None,
-                "sl":         None,
-                "tp1":        None,
+                "entry":      entry,
+                "sl":         sl,
+                "tp1":        tp,
                 "tp2":        None,
                 "confidence": conf,
-                "reasoning":  f"Fallback — {reason}",
+                "reasoning":  f"Fallback — {reason}. Rule engine signal used as-is.",
             },
-            "risks":            ["LLM analysis unavailable"],
+            "risks":            ["LLM analysis unavailable — rule engine signal only"],
             "self_critique":    "",
             "no_trade_reason":  "" if sig != "WAIT" else reason,
             "final_confidence": conf,

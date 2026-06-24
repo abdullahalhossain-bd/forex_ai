@@ -345,16 +345,31 @@ class ConfidenceEngine:
         At 10 trades:  -10 penalty
         At 5 trades:   -15 penalty
         At 0 trades:   -20 penalty
+
+        Day 81+ hotfix: in TEST_MODE, the penalty is halved so signals
+        can actually pass through during the early-learning phase.
+        Without this, a fresh bot with 0 trades gets -20 on every
+        signal, dropping BUY 71% → 51% → below threshold → NO TRADE.
+        The bot then never trades, never builds a sample, and stays
+        stuck at -20 forever. Halving the penalty breaks that loop.
         """
         if sample_size >= MIN_SAMPLE_SIZE:
             return 0.0
 
         if sample_size == 0:
-            return -20.0
+            base_penalty = -20.0
+        else:
+            base_penalty = -20.0 * (1 - math.sqrt(sample_size / MIN_SAMPLE_SIZE))
 
-        # Penalty scales with uncertainty
-        penalty = -20.0 * (1 - math.sqrt(sample_size / MIN_SAMPLE_SIZE))
-        return round(penalty, 1)
+        # Day 81+ — halve the penalty in TEST_MODE
+        try:
+            from config import TEST_MODE
+            if TEST_MODE:
+                base_penalty = base_penalty / 2
+        except Exception:
+            pass
+
+        return round(base_penalty, 1)
 
     def _check_skip(
         self, pattern: str, pair: str, timeframe: str, regime: str,

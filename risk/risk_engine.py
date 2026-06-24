@@ -17,11 +17,11 @@ DAILY_LOG_PATH = "memory/daily_risk.json"
 
 class RiskEngine:
 
-    # Day 76c: Increased risk limits to allow more active trading
-    MAX_RISK_PC      = 2.0      # was 1.0, now 2% per trade (Day 76c)
-    MIN_RR           = 1.5      # was 2.0, now 1.5:1 (Day 76c)
-    DAILY_LOSS_LIMIT = 7.0      # was 3.0, now 7% daily (Day 76c)
-    MAX_OPEN_TRADES  = 10       # was 3, now 10 concurrent (Day 76c)
+    MAX_RISK_PC      = 1.0
+    MIN_RR           = 2.0
+    MAX_RR           = 5.0   # Day 81+ — masterclass: don't take trades with RR > 1:5
+    DAILY_LOSS_LIMIT = 3.0
+    MAX_OPEN_TRADES  = 3
     ATR_SL_MULT      = 1.5
 
     def __init__(self, balance: float = 1000.0, symbol: str = "EURUSD"):
@@ -31,8 +31,18 @@ class RiskEngine:
         self._daily  = self._load_daily()
 
     def evaluate(self, signal: str, entry: float, atr: float, regime: dict | None = None) -> dict:
-        if signal == "NO TRADE":
-            return self._reject("Signal is NO TRADE")
+        # Day 81+ hotfix: WAIT signal should also be rejected (not just NO TRADE).
+        # Previously WAIT fell through to the `else` branch (SELL) and got
+        # approved with SL/TP — but WAIT means "no trade", so it must reject.
+        if signal in ("NO TRADE", "WAIT", "HOLD", ""):
+            return self._reject(f"Signal is {signal or 'EMPTY'} — no trade")
+
+        # Day 81+ crash fix: entry can be None or 0 when LLM is unavailable
+        # and the fallback chain didn't catch it. Force it to a safe default
+        # so SL/TP calculation doesn't produce garbage values.
+        if not entry or entry == 0:
+            log.warning(f"[RiskEngine] entry={entry} (None/0) — using fallback 1.0")
+            entry = 1.0
 
         daily_loss_usd = self._daily.get("total_loss_usd", 0)
         daily_loss_pc  = daily_loss_usd / self.balance * 100
@@ -54,8 +64,13 @@ class RiskEngine:
             "HIGH_VOLATILITY": 2.2,
         }.get(regime.get("volatility", "NORMAL") if regime else "NORMAL", self.ATR_SL_MULT)
 
+        # Day 81+ hotfix: ATR can be None/0/NaN — force a safe default
+        if not atr or atr != atr:  # NaN check
+            log.warning(f"[RiskEngine] atr={atr} (invalid) — using 0.0010")
+            atr = 0.0010
+
         sl_distance = round(atr * vol_mult, 5)
-        sl_pips     = round(sl_distance / self.pip)
+        sl_pips     = round(sl_distance / self.pip) if self.pip > 0 else 10
 
         if signal == "BUY":
             sl_price = round(entry - sl_distance, 5)

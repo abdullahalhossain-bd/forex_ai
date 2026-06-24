@@ -120,6 +120,26 @@ EXECUTION_MODE = os.getenv("EXECUTION_MODE", "paper").lower()
 # and you want the full safety pipeline re-engaged.
 TEST_MODE = os.getenv("TEST_MODE", "true").lower() == "true"
 
+# ── TRADING MODE (Day 81+) ────────────────────────────────────
+# SAFE        — high-confidence-only, all confirmations required, small lots
+# AUTONOMOUS  — system trades per ApprovalMode (default mode 3 = no human gate)
+# ABSOLUTE_SAFETY is an independent kill-switch flag — when true, the
+# following hard gates ALWAYS block execution regardless of TRADING_MODE:
+#   - broker disconnect
+#   - spread > 5x normal
+#   - extreme volatility (ATR > 3x median)
+#   - news window (±30 min around high-impact events)
+#   - margin level < 200%
+TRADING_MODE = os.getenv("TRADING_MODE", "AUTONOMOUS").upper()
+ABSOLUTE_SAFETY = os.getenv("ABSOLUTE_SAFETY", "true").lower() == "true"
+
+# Confidence thresholds per TRADING_MODE (used by TradePermission)
+TRADING_MODE_CONFIDENCE = {
+    "SAFE":       80,   # only high-conviction trades
+    "AUTONOMOUS": 60,   # balanced — production default
+    "TEST":       10,   # permissive — only when TEST_MODE=true
+}
+
 # ── Use Scanner ────────────────────────────────────────────────
 USE_SCANNER = os.getenv("USE_SCANNER", "false").lower() == "true"
 
@@ -264,6 +284,9 @@ class Config:
     USE_SCANNER = USE_SCANNER
     APPROVAL_MODE = APPROVAL_MODE
     TEST_MODE = TEST_MODE
+    TRADING_MODE = TRADING_MODE
+    ABSOLUTE_SAFETY = ABSOLUTE_SAFETY
+    TRADING_MODE_CONFIDENCE = TRADING_MODE_CONFIDENCE
 
     # MT5
     MT5_LOGIN = MT5_LOGIN

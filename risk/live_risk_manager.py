@@ -58,10 +58,9 @@ class CapitalTier:
     tier_mult: float             # position size multiplier
 
 TIERS = {
-    # Day 76c: Relaxed tier limits for more active trading
-    1: CapitalTier(1, "Initial Live", 0.01, 0.03, 5, 60.0, "manual", 0.5),        # was 0.5%, now 1%
-    2: CapitalTier(2, "Controlled Automation", 0.02, 0.06, 10, 50.0, "semi_auto", 0.8),  # was 1%, now 2%
-    3: CapitalTier(3, "Mature System", 0.03, 0.10, 15, 35.0, "fully_auto", 1.0), # was 1%, now 3%
+    1: CapitalTier(1, "Initial Live", 0.005, 0.015, 3, 80.0, "manual", 0.5),
+    2: CapitalTier(2, "Controlled Automation", 0.01, 0.03, 5, 70.0, "semi_auto", 0.8),
+    3: CapitalTier(3, "Mature System", 0.01, 0.03, 7, 55.0, "fully_auto", 1.0),
 }
 
 
