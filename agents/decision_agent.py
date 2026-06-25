@@ -32,7 +32,7 @@ class DecisionAgent:
             -> final decision + final confidence
     """
 
-    MIN_CONSENSUS = 2
+    MIN_CONSENSUS = 1
 
     def __init__(self):
         # Day 53 — pattern-aware dynamic confidence scorer (optional)
@@ -119,10 +119,30 @@ class DecisionAgent:
                 ["News window active — trading blocked"],
                 pattern=pattern, pair=pair, timeframe=timeframe, regime=regime_label)
 
-        if not risk_approved:
+        # Day 81+ hotfix (Barrier 4): placeholder_risk is built in
+        # trader.py BEFORE the real RiskEngine runs.  Its "approved"
+        # flag is just `final_signal in ("BUY", "SELL")` — so when
+        # final_signal is WAIT/NO TRADE, placeholder says approved=False,
+        # which used to block here BEFORE voting could even run.  But
+        # the voting block below can still produce a BUY/SELL from
+        # rule/master/llm signals.  Skip the risk gate when the caller
+        # passed a placeholder (lot=0 + sl_pips=0 + tp_pips=0 + rr=0).
+        # The real risk check happens in trader.py AFTER decide() returns.
+        _is_placeholder = (
+            risk_out.get("lot", -1) == 0
+            and risk_out.get("sl_pips", -1) == 0
+            and risk_out.get("tp_pips", -1) == 0
+            and risk_out.get("rr_ratio", -1) == 0
+        )
+        if not risk_approved and not _is_placeholder:
             return self._result("NO TRADE", 0, risk_out,
                 [f"Risk rejected: {risk_out.get('reject_reason')}"],
                 pattern=pattern, pair=pair, timeframe=timeframe, regime=regime_label)
+        if not risk_approved and _is_placeholder:
+            log.info(
+                "[DecisionAgent] Barrier-4 fix: placeholder_risk.approved=False "
+                "ignored — real risk check happens in trader.py after voting"
+            )
 
         if final_signal == "NO TRADE" and has_conflict:
             return self._result("NO TRADE", 0, risk_out, [
@@ -145,6 +165,23 @@ class DecisionAgent:
             votes += ["BUY"]
         elif rule_signal in ("SELL", "STRONG_SELL"):
             votes += ["SELL"]
+
+        # Day 81+ hotfix (Barrier 1): if both Master AND LLM returned WAIT
+        # (typical when LLM is rate-limited and MasterAnalyst fell back to
+        # WAIT), only the rule engine voted → buy_votes=1 < MIN_CONSENSUS=2
+        # → decision=WAIT.  But the rule engine already did full technical
+        # analysis; its signal is valid.  Promote rule signal to master
+        # weight (3 votes) when master has nothing useful to say.
+        if (master_sig in ("WAIT", "", "NO TRADE", None)
+                and llm_norm in ("WAIT", "NO TRADE", "HOLD", "", None)
+                and rule_signal in ("BUY", "SELL", "STRONG_BUY", "STRONG_SELL")
+                and rule_conf >= 30):
+            _rule_norm = "BUY" if "BUY" in rule_signal else "SELL"
+            votes += [_rule_norm] * 3  # promote rule to master weight
+            log.info(
+                f"[DecisionAgent] Barrier-1 fix: master+LLM both WAIT, "
+                f"rule={rule_signal} ({rule_conf}%) promoted to 3 votes"
+            )
 
         buy_votes  = votes.count("BUY")
         sell_votes = votes.count("SELL")

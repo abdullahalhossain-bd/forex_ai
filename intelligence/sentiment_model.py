@@ -183,7 +183,24 @@ class SentimentModel:
         return self._analyze_with_rules(text)
 
     def _analyze_with_llm(self, text: str) -> Optional[SentimentResult]:
-        """Use Groq/Gemini to analyze sentiment."""
+        """Use Groq/Gemini to analyze sentiment.
+
+        Day 81+ hotfix: per-cycle LLM throttle caps total calls per
+        symbol cycle to MAX_LLM_CALLS_PER_CYCLE.  Also enforces
+        LLM_CALL_INTERVAL_SEC between calls to prevent Groq 429 storm.
+        SentimentModel was previously bypassing the throttle — that
+        caused 30+ 429 errors per cycle in production.
+        """
+        # Per-cycle throttle check
+        if _key_manager is not None:
+            try:
+                allowed, reason = _key_manager.check_cycle_throttle()
+                if not allowed:
+                    log.info(f"[SentimentModel] LLM skipped — {reason}")
+                    return None
+            except Exception:
+                pass
+
         prompt = _SENTIMENT_PROMPT + f'"""\n{text[:1500]}\n"""'
 
         raw = None

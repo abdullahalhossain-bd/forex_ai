@@ -38,7 +38,13 @@ PROTECTION_LEVELS = {
 }
 
 # Daily/weekly limits
-DAILY_LOSS_LIMIT_PCT = 3.0
+DAILY_LOSS_LIMIT_PCT = 3.0  # default — overridden by config below
+# Day 81+ hotfix: load from config (default 20.0).
+try:
+    from config import DAILY_LOSS_LIMIT_PCT as _CFG_DLL
+    DAILY_LOSS_LIMIT_PCT = float(_CFG_DLL)
+except Exception:
+    DAILY_LOSS_LIMIT_PCT = 20.0
 WEEKLY_LOSS_LIMIT_PCT = 7.0
 MAX_DRAWDOWN_LIMIT_PCT = 15.0
 

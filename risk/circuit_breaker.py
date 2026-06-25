@@ -39,7 +39,13 @@ class CircuitBreaker:
 
     # Thresholds
     MAX_CONSECUTIVE_LOSSES = 3      # ৩টা loss → pause
-    MAX_DAILY_LOSS_PCT     = 3.0    # ৩% daily loss → pause
+    # Day 81+ hotfix: load MAX_DAILY_LOSS_PCT from config (default 20.0).
+    # Was hard-coded 3.0 — user wants 20.0.
+    try:
+        from config import DAILY_LOSS_LIMIT_PCT as _CFG_DLL
+        MAX_DAILY_LOSS_PCT = float(_CFG_DLL)
+    except Exception:
+        MAX_DAILY_LOSS_PCT = 20.0
     MIN_WIN_RATE_THRESHOLD = 30.0   # ৩০% এর নিচে → learning mode
     COOLDOWN_HOURS         = 4      # pause এর পরে কত ঘণ্টা wait
     LOOKBACK_TRADES        = 10     # win rate চেক করার জন্য কতটা পিছনে
@@ -116,6 +122,13 @@ class CircuitBreaker:
         """
         Trade close হওয়ার পরে call করো।
         result: 'WIN' | 'LOSS'
+
+        Day 81+ hotfix: sync daily_loss_usd with daily_risk.json so CB
+        and RiskEngine always agree on the day's loss total.  Previously
+        CB tracked its own running sum (incremental `+= abs(pnl_usd)`)
+        while RiskEngine tracked a separate `total_loss_usd` in
+        daily_risk.json — they drifted, and CB could trigger at $435
+        while RiskEngine thought loss was only $128.
         """
         recent = self._state.get("recent_results", [])
         recent.append(result)
@@ -124,8 +137,11 @@ class CircuitBreaker:
         if result == "LOSS":
             self._state["consecutive_losses"] = \
                 self._state.get("consecutive_losses", 0) + 1
-            self._state["daily_loss_usd"] = \
-                self._state.get("daily_loss_usd", 0) + abs(pnl_usd)
+            # Day 81+ hotfix: do NOT incrementally track daily_loss_usd
+            # here — instead sync from daily_risk.json (single source of
+            # truth).  RiskEngine._save_daily() is called by the same
+            # trade-close path and writes the authoritative total.
+            self._sync_daily_loss_from_risk_engine()
             log.info(
                 f"[CB] LOSS recorded | consecutive={self._state['consecutive_losses']} "
                 f"| daily_loss=${self._state['daily_loss_usd']:.2f}"
@@ -261,3 +277,26 @@ class CircuitBreaker:
     def _save_state(self):
         with open(CB_STATE_PATH, "w") as f:
             json.dump(self._state, f, indent=2)
+
+    def _sync_daily_loss_from_risk_engine(self):
+        """Day 81+ hotfix: read daily_loss_usd from daily_risk.json
+        (the RiskEngine's authoritative state file) so CB and RiskEngine
+        always agree on the day's loss total.
+
+        Previously CB tracked its own running sum which drifted from
+        RiskEngine's total — CB could trigger at $435 while RiskEngine
+        thought loss was only $128.  Now both read from the same file.
+        """
+        try:
+            risk_path = "memory/daily_risk.json"
+            with open(risk_path) as f:
+                risk_state = json.load(f)
+            # Only sync if the date matches today (RiskEngine resets on
+            # date rollover; CB should follow the same convention).
+            today = date.today().isoformat()
+            if risk_state.get("date") == today:
+                self._state["daily_loss_usd"] = float(
+                    risk_state.get("total_loss_usd", 0)
+                )
+        except Exception as e:
+            log.debug(f"[CB] sync from daily_risk.json failed: {e}")

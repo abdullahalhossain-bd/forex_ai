@@ -577,7 +577,20 @@ Before deciding BUY/SELL/WAIT, walk through these layers IN ORDER:
     def _call_llm(self, context: str) -> str:
         """Call LLM with Groq (primary) → Gemini (fallback) chain.
         Multi-key rotation: if one key fails, automatically tries next.
-        Anthropic + OpenRouter are intentionally NOT used per user request."""
+        Anthropic + OpenRouter are intentionally NOT used per user request.
+
+        Day 81+ hotfix: per-cycle LLM throttle caps total calls per
+        symbol cycle to MAX_LLM_CALLS_PER_CYCLE (default 5).  Also
+        enforces LLM_CALL_INTERVAL_SEC between calls (default 1.0s)
+        to prevent the Groq free-tier 429 storm.
+        """
+        # Per-cycle throttle check
+        if _key_manager is not None:
+            allowed, reason = _key_manager.check_cycle_throttle()
+            if not allowed:
+                log.info(f"[MasterAnalyst] LLM skipped — {reason}")
+                raise RuntimeError(f"LLM throttle: {reason}")
+
         user_prompt = (
             "Here is the complete market intelligence package (session-aware AND "
             "macro/intermarket-aware) for analysis:\n\n"
@@ -596,8 +609,14 @@ Before deciding BUY/SELL/WAIT, walk through these layers IN ORDER:
             client = _groq_client
             if client is None and _key_manager is not None:
                 client = _key_manager.get_groq_client()
+            if client is None and _key_manager is not None:
+                # All Groq keys exhausted — wait for soonest recovery (max 5 min).
+                # Prevents the 429 storm + supervisor restart loop seen in
+                # production when free-tier TPD limit is hit.
+                if _key_manager.wait_for_any_groq(max_wait=300):
+                    client = _key_manager.get_groq_client()
             if client is None:
-                log.error("[MasterAnalyst] No Groq client available (keys exhausted or missing)")
+                log.error("[MasterAnalyst] No Groq client available after wait — falling back to Gemini")
                 break
             try:
                 resp = client.chat.completions.create(

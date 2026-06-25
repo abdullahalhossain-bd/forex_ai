@@ -1,10 +1,16 @@
 # broker/account_manager.py  —  Day 31 Part 2 & 6 | Account State + Execution Safety
 # ============================================================
 # Account info read করা ও "এখন trade করা নিরাপদ কিনা" — এই দুটো
-# দায়িত্ব এই module-এর। PaperTrader-এর get_dashboard()-এর broker
-# version বলতে পারো।
+# দায়িত্ব এই module-এর।
+#
+# DAY 82+ FIX:
+#   - trading_permission() এ max_spread_pips আর hardcode 3.0 নয়।
+#     symbol-specific threshold ব্যবহার হয় (XAUUSD=50, DEFAULT=10)।
+#   - TEST_MODE=true হলে spread_ok সবসময় True — শুধু trade_mode চেক।
+#   - market_status() এ spread=0 কে "closed" না ধরে "off-hours" হিসেবে দেখে।
 # ============================================================
 
+import os
 from datetime import datetime, timezone
 from utils.logger import get_logger
 from broker.mt5_connection import MT5_AVAILABLE
@@ -13,6 +19,27 @@ log = get_logger("account_manager")
 
 if MT5_AVAILABLE:
     import MetaTrader5 as mt5
+
+
+# ── Per-symbol max spread (pips) for production trading ───────
+SPREAD_LIMITS_PIPS = {
+    "EURUSD": 3.0,
+    "GBPUSD": 4.0,
+    "USDJPY": 3.0,
+    "AUDUSD": 3.0,
+    "USDCAD": 4.0,
+    "XAUUSD": 50.0,
+    "XAGUSD": 10.0,
+    "DEFAULT": 10.0,
+}
+
+
+def _spread_limit(symbol: str) -> float:
+    return SPREAD_LIMITS_PIPS.get(symbol.upper(), SPREAD_LIMITS_PIPS["DEFAULT"])
+
+
+def _test_mode() -> bool:
+    return os.getenv("TEST_MODE", "false").lower() == "true"
 
 
 class AccountManager:
@@ -28,7 +55,7 @@ class AccountManager:
     """
 
     MIN_FREE_MARGIN_PCT = 20.0     # equity-র কমপক্ষে কত % free margin থাকা উচিত
-    MIN_MARGIN_LEVEL_PCT = 200.0   # margin level এর নিচে গেলে risky (broker margin call ~100%)
+    MIN_MARGIN_LEVEL_PCT = 200.0   # margin level এর নিচে গেলে risky
 
     def __init__(self, connection):
         self.connection = connection
@@ -69,14 +96,10 @@ class AccountManager:
     def _classify_health(self, snap: dict) -> str:
         if not snap["trade_allowed"]:
             return "BLOCKED"
-        
-        # BUG FIX: margin_level 0 মানে কোনো ওপেন পজিশন নেই, তাই সেটা AT_RISK নয়।
         if snap["margin_level"] and 0 < snap["margin_level"] < self.MIN_MARGIN_LEVEL_PCT:
             return "AT_RISK"
-            
         if snap["free_margin_pct"] < self.MIN_FREE_MARGIN_PCT:
             return "LOW_MARGIN"
-            
         return "HEALTHY"
 
     def print_snapshot(self) -> None:
@@ -111,15 +134,12 @@ class AccountManager:
 
         requested = requested_symbol.upper().strip()
 
-        # FIX: mt5.symbols_get() সরাসরি exact match স্ট্রিং অনেক সময় রিজেক্ট করে।
-        # তাই সেফটি হিসেবে ওয়াইল্ডকার্ড প্যাটার্ন ব্যবহার করা হলো।
         exact_match = mt5.symbols_get(f"*{requested}*")
         if exact_match:
             for s in exact_match:
                 if s.name.upper() == requested:
                     return s.name
 
-        # নিখুঁত ম্যাচ না পাওয়া গেলে ব্রোকারের সমস্ত সিম্বল স্ক্যান করবে
         all_symbols = mt5.symbols_get()
         if not all_symbols:
             log.error("[AccountManager] symbols_get() থেকে কিছু পাওয়া যায়নি")
@@ -127,10 +147,10 @@ class AccountManager:
 
         for s in all_symbols:
             name_upper = s.name.upper()
-            # suffix বা prefix বাদ দিয়ে ক্লিন করার লজিক
-            cleaned = name_upper.replace(".", "").replace("M", "", 1) \
+            cleaned = (
+                name_upper.replace(".", "").replace("M", "", 1)
                 if name_upper.endswith("M") else name_upper
-                
+            )
             if cleaned == requested or requested in name_upper:
                 log.info(f"[AccountManager] Symbol resolved: '{requested}' → '{s.name}'")
                 return s.name
@@ -145,6 +165,11 @@ class AccountManager:
     def market_status(self, broker_symbol: str) -> dict:
         """
         Market open কিনা, spread acceptable কিনা, trading allowed কিনা চেক করে।
+
+        DAY 82+ FIX:
+          tick.bid == 0 এবং tick.ask == 0 হলেই "no data"।
+          spread=0 alone মানে closed না — off-hours MT5 cached এ spread=0
+          আসতে পারে কিন্তু trade_mode=4 থাকলে market আসলে open।
         """
         if not MT5_AVAILABLE:
             return {"ok": False, "reason": "MT5 unavailable"}
@@ -154,36 +179,34 @@ class AccountManager:
             return {"ok": False, "reason": f"Symbol info না পাওয়া গেছে: {broker_symbol}"}
 
         if not info.visible:
-            # Market Watch-এ না থাকলে তা সক্রিয় করে নেওয়া হচ্ছে
             mt5.symbol_select(broker_symbol, True)
             info = mt5.symbol_info(broker_symbol)
 
         tick = mt5.symbol_info_tick(broker_symbol)
-        # FIX: উইকএন্ডে বা মার্কেট বন্ধ থাকলে tick.time শূন্য বা পুরানো ডেটা দেখাতে পারে।
-        if tick is None or tick.time == 0:
+        if tick is None or (tick.bid == 0 and tick.ask == 0):
             return {"ok": False, "reason": "কোনো live tick data নেই — market বন্ধ থাকতে পারে"}
 
         spread_points = info.spread
-        # 3 or 5 digits হলে ১০ দিয়ে ভাগ করে পিপস (pips) বের করা হচ্ছে
-        spread_pips = spread_points / 10 if info.digits in (3, 5) else spread_points
+        spread_pips = (
+            spread_points / 10 if info.digits in (3, 5) else spread_points
+        )
 
         result = {
-            "ok": True,
-            "symbol": broker_symbol,
-            "trade_mode": info.trade_mode,     # 0 = disabled, 4 = full
+            "ok":         True,
+            "symbol":     broker_symbol,
+            "trade_mode": info.trade_mode,
             "spread_pips": round(spread_pips, 1),
-            "bid": tick.bid,
-            "ask": tick.ask,
-            "digits": info.digits,
+            "bid":        tick.bid,
+            "ask":        tick.ask,
+            "digits":     info.digits,
         }
 
-        # Trade mode checking (0 = Disabled, 1 = Long Only, 2 = Short Only, 3 = Close Only, 4 = Full)
         if info.trade_mode == 0:
             result["ok"] = False
             result["reason"] = "এই symbol-এ trading disabled আছে এই broker-এ"
         elif info.trade_mode == 3:
             result["ok"] = False
-            result["reason"] = "এই symbol-এ শুধুমাত্র পজিশন ক্লোজ করা যাবে, নতুন ট্রেড নয়"
+            result["reason"] = "এই symbol-এ শুধুমাত্র পজিশন ক্লোজ করা যাবে, নতুন ট্রেড নয়"
 
         return result
 
@@ -195,36 +218,61 @@ class AccountManager:
         self,
         symbol: str,
         risk_engine_ok: bool = True,
-        max_spread_pips: float = 3.0,
+        max_spread_pips: float = None,  # None → symbol-specific threshold
     ) -> dict:
         """
-        ট্রেড এক্সিকিউট করার আগে সব সেফটি লেয়ার বা ফিল্টার পাস করছে কি না যাচাই করে।
+        ট্রেড এক্সিকিউট করার আগে সব সেফটি লেয়ার পাস করছে কিনা যাচাই করে।
+
+        DAY 82+ FIX:
+          - max_spread_pips=None হলে SPREAD_LIMITS_PIPS থেকে নেওয়া হয়।
+          - TEST_MODE=true হলে spread_ok সবসময় True (শুধু trade_mode চেক)।
+          - market_status() এ spread=0 কে closed না ধরা হয় (tick.bid/ask চেক)।
         """
         checks = {}
 
         snapshot = self.get_account_snapshot()
-        checks["account_ok"] = bool(snapshot and snapshot["status"] in ("HEALTHY", "LOW_MARGIN"))
+        checks["account_ok"] = bool(
+            snapshot and snapshot["status"] in ("HEALTHY", "LOW_MARGIN")
+        )
 
         broker_symbol = self.resolve_symbol(symbol)
         checks["symbol_ok"] = broker_symbol is not None
 
-        market = self.market_status(broker_symbol) if broker_symbol else {"ok": False, "reason": "symbol unresolved"}
-        checks["market_ok"] = market.get("ok", False)
-        
-        checks["spread_ok"] = (
-            market.get("spread_pips", 999) <= max_spread_pips
-            if checks["market_ok"] else False
+        market = (
+            self.market_status(broker_symbol)
+            if broker_symbol
+            else {"ok": False, "reason": "symbol unresolved"}
         )
+        checks["market_ok"] = market.get("ok", False)
+
+        # Spread check — TEST_MODE ছাড়া symbol-specific limit দিয়ে
+        if _test_mode():
+            checks["spread_ok"] = True
+            spread_detail = "TEST_MODE — spread check skipped"
+        else:
+            limit = max_spread_pips if max_spread_pips is not None else _spread_limit(symbol)
+            actual_spread = market.get("spread_pips", 999)
+            checks["spread_ok"] = actual_spread <= limit if checks["market_ok"] else False
+            spread_detail = f"{actual_spread} pips (limit {limit})"
+
         checks["risk_ok"] = risk_engine_ok
 
         allowed = all(checks.values())
         failed = [k for k, v in checks.items() if not v]
 
+        if failed:
+            log.warning(
+                f"[AccountManager] trading_permission DENIED for {symbol} "
+                f"— failed: {failed}"
+            )
+        else:
+            log.info(f"[AccountManager] trading_permission ALLOWED for {symbol}")
+
         return {
-            "allowed": allowed,
-            "broker_symbol": broker_symbol,
-            "checks": checks,
-            "failed_checks": failed,
-            "market_info": market,
+            "allowed":        allowed,
+            "broker_symbol":  broker_symbol,
+            "checks":         checks,
+            "failed_checks":  failed,
+            "market_info":    market,
             "account_status": snapshot["status"] if snapshot else "UNKNOWN",
         }

@@ -40,8 +40,18 @@ log = get_logger("position_sizer")
 
 # Absolute hard caps
 MAX_RISK_PCT = 0.02        # never risk more than 2% per trade
-MAX_LOT = 50.0             # never exceed 50 lots
 MIN_LOT = 0.01             # minimum lot size
+
+# Day 81+ hotfix: MAX_LOT was 50.0 — way too high.  On a $10k account
+# with 1% risk, a 15-pip SL gives lot=0.67, but Kelly × vol × conf ×
+# corr multipliers can compound to 2-3x, producing lot=1.8-2.5 which
+# is 2.7-4% risk per trade.  This caused the $435 loss the user saw.
+# Load from config so it's overridable via .env without code change.
+try:
+    from config import MAX_LOT as _CFG_MAX_LOT
+    MAX_LOT = float(_CFG_MAX_LOT)
+except Exception:
+    MAX_LOT = 0.20  # safe default — $10k account
 
 
 @dataclass

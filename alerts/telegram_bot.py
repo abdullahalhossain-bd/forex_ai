@@ -19,6 +19,8 @@
 
 import os
 import asyncio
+import time
+from collections import deque
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
@@ -37,6 +39,50 @@ _pause_lock = asyncio.Lock()
 _on_pause_changed: Optional[Callable[[bool], None]] = None
 
 TELEGRAM_MSG_LIMIT = 4096  # Telegram hard limit per message
+
+# ── Day 81+ hotfix: per-channel rate limiter ──────────────────
+# Telegram floods when the bot sends dozens of messages per minute
+# (trade-open alerts, news alerts, confluence alerts, restart alerts).
+# This sliding-window limiter drops messages above TELEGRAM_MAX_MSG_PER_MIN
+# (default 10) so the bot doesn't get muted by users or rate-limited by Telegram.
+
+class _RateLimiter:
+    """Sliding-window per-channel rate limiter."""
+    def __init__(self, max_per_min: int = 10):
+        self.max_per_min = max_per_min
+        self._timestamps: deque = deque()  # monotonic timestamps of sent msgs
+        self._dropped_count = 0
+
+    def allow(self) -> bool:
+        now = time.monotonic()
+        # Evict timestamps older than 60 seconds
+        cutoff = now - 60.0
+        while self._timestamps and self._timestamps[0] < cutoff:
+            self._timestamps.popleft()
+        if len(self._timestamps) >= self.max_per_min:
+            self._dropped_count += 1
+            if self._dropped_count % 10 == 1:  # log every 10th drop
+                log.warning(
+                    f"[Telegram] rate limit: dropped {self._dropped_count} messages "
+                    f"({len(self._timestamps)}/{self.max_per_min} in last 60s)"
+                )
+            return False
+        self._timestamps.append(now)
+        return True
+
+# Singleton rate limiter — loaded from config on first use
+_RATE_LIMITER: Optional[_RateLimiter] = None
+
+def _get_rate_limiter() -> _RateLimiter:
+    global _RATE_LIMITER
+    if _RATE_LIMITER is None:
+        try:
+            from config import TELEGRAM_MAX_MSG_PER_MIN
+            limit = TELEGRAM_MAX_MSG_PER_MIN
+        except Exception:
+            limit = 10
+        _RATE_LIMITER = _RateLimiter(max_per_min=limit)
+    return _RATE_LIMITER
 
 
 def register_pause_callback(callback: Callable[[bool], None]) -> None:
@@ -130,9 +176,16 @@ class TelegramNotifier:
 
         Long messages are chunked automatically to stay within Telegram's
         4096-character limit.
+
+        Day 81+ hotfix: per-channel rate limiter drops messages above
+        TELEGRAM_MAX_MSG_PER_MIN (default 10) to prevent Telegram floods.
         """
         if not self.bot:
             return
+
+        # Day 81+ rate limit check
+        if not _get_rate_limiter().allow():
+            return  # silently drop — already logged in _RateLimiter.allow()
 
         for chunk in _chunk_message(text):
             # FIX #1: Try Markdown first, fall back to plain text.

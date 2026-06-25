@@ -459,6 +459,16 @@ class AITrader:
         log.info("━" * 52)
         t0 = time.time()
 
+        # Day 81+ hotfix: reset per-cycle LLM call counter so each
+        # symbol cycle gets a fresh budget of MAX_LLM_CALLS_PER_CYCLE.
+        # Without this, the counter would accumulate across cycles and
+        # block all LLM calls after the first few symbols.
+        try:
+            from core.llm_key_manager import get_llm_key_manager
+            get_llm_key_manager().reset_cycle_calls()
+        except Exception:
+            pass
+
         # ── Day 81+ — Start signal pipeline debugger for this cycle ──
         try:
             from monitoring.signal_debugger import get_signal_debugger
@@ -479,9 +489,19 @@ class AITrader:
                     debugger.log_cycle_summary()
                     debugger.save_to_file()
                 log.warning("[Frequency] Daily trade cap hit — skipping cycle")
+                try:
+                    from core.trade_decision_log import log_decision
+                    log_decision(symbol=self.symbol, signal="NO TRADE",
+                                 reject_stage="frequency_cap",
+                                 reject_reason="Daily trade cap reached")
+                except Exception: pass
                 return self._error_result("Daily trade cap reached")
-        except Exception:
+        except Exception as e:
             freq_ctrl = None
+            try:
+                from core.trade_decision_log import log_cycle_error
+                log_cycle_error(self.symbol, str(e), "frequency_ctrl_init")
+            except Exception: pass
 
         session_ctx = SessionAnalyzer().get_current_session()
         latest_price = None
@@ -494,6 +514,12 @@ class AITrader:
             # common (market closed, symbol temporarily unavailable) and
             # would spam the user. Just log locally.
             log.warning(f"[Market] {self.symbol} data fetch failed — skipping this cycle")
+            try:
+                from core.trade_decision_log import log_decision
+                log_decision(symbol=self.symbol, signal="NO TRADE",
+                             reject_stage="market_data",
+                             reject_reason=f"Market data fetch failed: {market_out.get('error')}")
+            except Exception: pass
             if debugger:
                 debugger.record("market_data", "ERROR", market_out.get("error", "fetch_failed"))
                 debugger.record_final("NO_TRADE", "Market data fetch failed")
@@ -544,6 +570,12 @@ class AITrader:
                 closed_trades=closed_processed,
             )
             result["reject_reason"] = f"Circuit breaker [{cb_check['mode']}]: {cb_check['reason']}"
+            try:
+                from core.trade_decision_log import log_decision
+                log_decision(symbol=self.symbol, signal="NO TRADE",
+                             reject_stage="circuit_breaker",
+                             reject_reason=f"[{cb_check['mode']}] {cb_check['reason']}")
+            except Exception: pass
             self._print_final(result)
             return result
         if debugger:
@@ -562,6 +594,12 @@ class AITrader:
         log.info("[3/9] Analysis Agent...")
         analysis_out = self._analysis.run(market_out)
         if "error" in analysis_out:
+            try:
+                from core.trade_decision_log import log_decision
+                log_decision(symbol=self.symbol, signal="NO TRADE",
+                             reject_stage="analysis_agent",
+                             reject_reason=f"Analysis error: {analysis_out.get('error')}")
+            except Exception: pass
             return self._error_result(f"Analysis Agent: {analysis_out['error']}")
 
         memory_ctx = self._memory.get_context_for_ai(self.symbol)
@@ -630,6 +668,17 @@ class AITrader:
                             f"conf={dec_out.get('confidence', 0):.0f}%")
 
         log.info("[5/9] Risk Engine...")
+        # Day 81+ hotfix: sync live open positions into RiskEngine so the
+        # correlation check uses authoritative PaperTrader state instead of
+        # potentially-stale daily_risk.json open_pairs list.  Without this,
+        # a closed AUDUSD position would block EURUSD/GBPUSD forever.
+        try:
+            _live_open = [t.get("pair") for t in self._paper.get_open_positions() if t.get("pair")]
+            if hasattr(self._risk, "sync_open_positions"):
+                self._risk.sync_open_positions(_live_open)
+        except Exception as e:
+            log.debug(f"[Risk] sync_open_positions failed (non-critical): {e}")
+
         risk_out = self._risk.evaluate(
             signal=dec_out["decision"],
             entry=entry,
@@ -708,6 +757,22 @@ class AITrader:
             debugger.record("permission", perm_status,
                             f"{perm_out.get('passed', 0)}/{perm_out.get('total', 0)} checks")
 
+        # Day 81+ hotfix: log permission outcome to execution.log
+        try:
+            from core.execution_logger import log_permission_checked
+            log_permission_checked(
+                symbol=self.symbol,
+                allowed=perm_out.get("allowed", False),
+                passed=perm_out.get("passed", 0),
+                total=perm_out.get("total", 0),
+                failed_checks=[c.get("check", "?") for c in perm_out.get("checks", [])
+                               if not c.get("passed", True)],
+                decision=dec_out.get("decision"),
+                confidence=dec_out.get("confidence", 0),
+            )
+        except Exception:
+            pass
+
         log.info("[7/9] Learning Agent...")
         self._learn.save_decision(dec_out, analysis_out, market_out)
         stats = self._learn.get_performance_stats()
@@ -755,6 +820,20 @@ class AITrader:
             )
             approved_to_execute = approval_out["proceed"]
 
+            # Day 81+ hotfix: log every approval decision to execution.log
+            try:
+                from core.execution_logger import log_approval_processed
+                log_approval_processed(
+                    symbol=self.symbol,
+                    proceed=approved_to_execute,
+                    mode=approval_out.get("mode", 0),
+                    action=approval_out.get("action", "unknown"),
+                    final_action=result["final_action"],
+                    confidence=result["confidence"],
+                )
+            except Exception:
+                pass
+
             if approval_out["action"] == "WAIT_APPROVAL":
                 result["pending_approval_id"] = approval_out.get("pending_id")
                 # ApprovalMode.process() builds the human-readable summary but
@@ -780,6 +859,10 @@ class AITrader:
                         "lot": result["lot"],
                         "confidence": result["confidence"],
                         "rr": result["rr"],
+                        # Day 81+ hotfix: pass trade_allowed + risk_approved
+                        # so ExecutionRouter can hard-block on permission bypass.
+                        "trade_allowed": result["trade_allowed"],
+                        "risk_approved": result.get("risk_approved", True),
                         "timeframe": self.timeframe,
                     }
                 )
@@ -873,6 +956,61 @@ class AITrader:
             debugger.record_final(final_action, reject_reason)
             debugger.log_cycle_summary()
             debugger.save_to_file()
+
+        # ── Day 81+ hotfix: log EVERY trade decision to memory/trade_decisions.jsonl ──
+        # This is the single source of truth for "why didn't the bot trade?".
+        # The operator can tail this file to see exactly what happened in
+        # each cycle: signal, confidence, taken/not-taken, reject stage+reason.
+        try:
+            from core.trade_decision_log import log_decision as _log_dec
+            _final_action = result.get("final_action") or result.get("decision", "WAIT")
+            _taken = bool(result.get("paper_trade_id") or result.get("ticket"))
+            # Determine reject_stage from final_action + reject_reason
+            _reject_stage = ""
+            _reject_reason = result.get("reject_reason") or ""
+            if not _taken and _reject_reason:
+                if "Circuit breaker" in _reject_reason:
+                    _reject_stage = "circuit_breaker"
+                elif "Correlation" in _reject_reason:
+                    _reject_stage = "risk_correlation"
+                elif "Daily loss" in _reject_reason or "loss limit" in _reject_reason:
+                    _reject_stage = "risk_daily_loss"
+                elif "Max open" in _reject_reason:
+                    _reject_stage = "risk_max_open"
+                elif "Insufficient margin" in _reject_reason:
+                    _reject_stage = "risk_margin"
+                elif "Risk rejected" in _reject_reason or "Risk approved" in str(result.get("failed_checks", "")):
+                    _reject_stage = "risk_engine"
+                elif "News" in _reject_reason or "news" in _reject_reason:
+                    _reject_stage = "news_filter"
+                elif "Session" in _reject_reason or "session" in _reject_reason:
+                    _reject_stage = "session"
+                elif "WAIT_APPROVAL" in str(result.get("pending_approval_id")):
+                    _reject_stage = "approval_mode_2"
+                elif "execution" in _reject_reason.lower() or "router" in _reject_reason.lower():
+                    _reject_stage = "execution_router"
+                elif "market closed" in _reject_reason.lower() or "Hard Stop" in _reject_reason:
+                    _reject_stage = "absolute_safety"
+                elif _final_action in ("WAIT", "NO TRADE"):
+                    _reject_stage = "decision_agent"
+                else:
+                    _reject_stage = "unknown"
+            _log_dec(
+                symbol=self.symbol,
+                signal=_final_action,
+                confidence=result.get("confidence", 0),
+                timeframe=self.timeframe,
+                taken=_taken,
+                reject_stage=_reject_stage,
+                reject_reason=_reject_reason,
+                lot=result.get("lot"),
+                entry=result.get("entry"),
+                sl=result.get("sl"),
+                tp=result.get("tp"),
+                ticket=result.get("ticket"),
+            )
+        except Exception:
+            pass
 
         # ── Day 84+ — Record trade in frequency controller ──
         if freq_ctrl:

@@ -182,6 +182,37 @@ class ForexAISystem:
         print(BANNER)
         print("  Booting runtime (24 phases)...\n")
 
+        # Day 81+ hotfix: TEST_MODE warning banner.
+        # TEST_MODE bypasses MasterAnalyst, Confluence, Ensemble, RL, and
+        # MasterDecision gates.  It also lowers TradePermission confidence
+        # threshold to 10% and force-approves PositionSizer rejects with
+        # lot=0.01.  This is fine for first-time MT5 verification, but
+        # should NOT stay on in production.
+        try:
+            from config import TEST_MODE, SIMULATION_MODE, MAX_LOT, APPROVAL_MODE, MAX_OPEN_TRADES
+            if TEST_MODE:
+                print("=" * 60)
+                print("  ⚠️  TEST_MODE = True  ⚠️")
+                print("  All safety gates are PERMISSIVE:")
+                print("    • MasterAnalyst/Confluence/Ensemble/RL bypassed")
+                print("    • TradePermission MIN_CONFIDENCE = 10 (prod=60)")
+                print("    • PositionSizer rejects force-approved lot=0.01")
+                print("    • Session quality check disabled")
+                print("  Set TEST_MODE=false in .env for production trading.")
+                print("=" * 60)
+                print()
+            if SIMULATION_MODE:
+                print("=" * 60)
+                print("  🔬  SIMULATION_MODE = True  🔬")
+                print("  No real MT5 orders will be placed.")
+                print("  Set SIMULATION_MODE=false in .env for live trading.")
+                print("=" * 60)
+                print()
+            print(f"  Config: MAX_LOT={MAX_LOT} | APPROVAL_MODE={APPROVAL_MODE} | MAX_OPEN_TRADES={MAX_OPEN_TRADES}")
+            print()
+        except Exception:
+            pass
+
         # Override config-driven settings if CLI args were supplied.
         self._apply_cli_overrides()
 
@@ -204,6 +235,35 @@ class ForexAISystem:
         if self.trading_engine is None:
             # Fallback: try the trader directly.
             self.trading_engine = self.runtime.registry.try_resolve("trader")
+
+        # Day 81+ hotfix: auto-reconcile DB trades with MT5 live positions.
+        # Closes orphan DB-OPEN trades that were closed externally (SL/TP hit,
+        # manual close, restart) but never marked CLOSED in DB.  Without this,
+        # stale open_pairs blocks new trades on correlated pairs forever.
+        try:
+            from core.orphan_cleanup import reconcile_open_positions
+            mt5_conn = None
+            try:
+                router = self.runtime.registry.try_resolve("execution_router")
+                if router and hasattr(router, "_mt5_conn"):
+                    mt5_conn = router._mt5_conn
+            except Exception:
+                pass
+            paper_trader = None
+            try:
+                paper_trader = self.runtime.registry.try_resolve("paper_trader")
+            except Exception:
+                pass
+            reconciled = reconcile_open_positions(
+                db=None, mt5_conn=mt5_conn, paper_trader=paper_trader,
+            )
+            if reconciled["closed"] > 0:
+                print(f"  🧹  Orphan cleanup: {reconciled['closed']} stale DB-OPEN trades auto-closed")
+                logging.info(f"[System] Orphan cleanup: {reconciled}")
+            elif reconciled["kept"] > 0:
+                print(f"  ✓  {reconciled['kept']} DB-OPEN trades verified against MT5 (all real)")
+        except Exception as e:
+            logging.warning(f"[System] Orphan cleanup skipped: {e}")
 
         print()
         self._print_boot_summary()
@@ -290,6 +350,13 @@ class ForexAISystem:
                         f"Relaunching in 10s..."
                     )
                     self._notify_restart(restart_count, reason="unexpected exit")
+                    # Day 81+ hotfix: record to crash log so operator can
+                    # see exactly what happened.
+                    try:
+                        from core.trade_decision_log import log_cycle_error
+                        log_cycle_error(symbol="SYSTEM", stage="trader_loop_exit",
+                                        error=f"Trader exited unexpectedly (restart #{restart_count})")
+                    except Exception: pass
                     time.sleep(10)
                 except KeyboardInterrupt:
                     logging.info("[System] Stop requested by user (Ctrl+C)")
@@ -297,10 +364,18 @@ class ForexAISystem:
                     break
                 except Exception as e:
                     restart_count += 1
+                    # Day 81+ hotfix: capture exact error to crash log.
+                    import traceback as _tb
+                    _error_detail = f"{type(e).__name__}: {e}\n{_tb.format_exc()}"
                     logging.error(
                         f"[System] Fatal error in trading loop (restart #{restart_count}): {e}",
                         exc_info=True,
                     )
+                    try:
+                        from core.trade_decision_log import log_cycle_error
+                        log_cycle_error(symbol="SYSTEM", stage="trader_loop_crash",
+                                        error=_error_detail[:2000])
+                    except Exception: pass
                     # Publish system.error so bus subscribers (alerts) pick it up.
                     try:
                         from core.event_bus import get_bus

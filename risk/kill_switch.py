@@ -37,7 +37,14 @@ class KillSwitch:
     """3-level emergency brake with persistent state."""
 
     # Default thresholds
-    DAILY_LOSS_LIMIT = 0.03       # 3% daily loss
+    DAILY_LOSS_LIMIT = 0.03       # default — overridden by config below
+    # Day 81+ hotfix: load from config (default 20.0% = 0.20).
+    # Was hard-coded 0.03 (3%) — user wants 20%.
+    try:
+        from config import DAILY_LOSS_LIMIT_PCT as _CFG_DLL
+        DAILY_LOSS_LIMIT = float(_CFG_DLL) / 100.0  # percent → fraction
+    except Exception:
+        DAILY_LOSS_LIMIT = 0.20
     WEEKLY_LOSS_LIMIT = 0.08      # 8% weekly loss
     MAX_DRAWDOWN_LIMIT = 0.15     # 15% total drawdown
     DAILY_COOLDOWN_HOURS = 16     # rest of trading day + overnight

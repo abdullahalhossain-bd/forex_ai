@@ -20,7 +20,13 @@ class RiskAgent:
     """
 
     MAX_RISK_PERCENT    = 1.0    # max 1% account risk per trade
-    DAILY_LOSS_LIMIT    = 3.0    # max 3% daily loss before stopping
+    # Day 81+ hotfix: load DAILY_LOSS_LIMIT from config (default 20.0).
+    # Was hard-coded 3.0 — user wants 20.0.
+    try:
+        from config import DAILY_LOSS_LIMIT_PCT as _CFG_DLL
+        DAILY_LOSS_LIMIT = float(_CFG_DLL)
+    except Exception:
+        DAILY_LOSS_LIMIT = 20.0
     MIN_RR              = 1.5    # minimum risk:reward ratio
     ATR_SL_MULTIPLIER   = 1.5   # SL = ATR * 1.5
 

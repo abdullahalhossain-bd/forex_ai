@@ -9,25 +9,16 @@ Single source of truth for real-time MT5 market data:
   - Spread explosion detection (current spread vs N-period median)
   - Liquidity condition classification (NORMAL / THIN / EXPLOSIVE)
 
-This module NEVER falls back to TradingView or any other data source.
-If MT5 is unavailable, every method returns None — callers MUST handle
-this as "no data, no trade".
-
-Usage:
-    from data.live_feed import LiveFeed
-
-    feed = LiveFeed()
-    snapshot = feed.get_snapshot("EURUSD")
-    if snapshot is None:
-        # MT5 down — abort cycle
-        return
-    if snapshot.liquidity == "EXPLOSIVE":
-        # Spread blew up — wait
-        return
-    # ... proceed with snapshot.bid / snapshot.ask / snapshot.spread_pips
+FIX (Day 82+):
+  - spread_pips == 0 আর CLOSED মানে না — MT5 cached/off-hours data-তে
+    spread=0 আসতে পারে কিন্তু market open থাকে। তাই THIN দেওয়া হয়েছে।
+  - is_safe_to_trade() এ TEST_MODE-এ শুধু trade_mode==0 চেক করে।
+    velocity/spread দিয়ে block হয় না।
+  - ABSOLUTE_SAFETY=false হলে সব check skip হয়।
 """
 from __future__ import annotations
 
+import os
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -45,6 +36,25 @@ try:
 except ImportError:
     mt5 = None
     MT5_AVAILABLE = False
+
+
+# ── Per-symbol spread thresholds (pips) ───────────────────────
+# These are used only in PRODUCTION mode (TEST_MODE=false).
+# Raise a symbol's threshold if you see false EXPLOSIVE blocks.
+SPREAD_LIMITS_PIPS: Dict[str, float] = {
+    "EURUSD": 3.0,
+    "GBPUSD": 4.0,
+    "USDJPY": 3.0,
+    "AUDUSD": 3.0,
+    "USDCAD": 4.0,
+    "XAUUSD": 50.0,   # Gold — wide spread is normal
+    "XAGUSD": 10.0,
+    "DEFAULT": 10.0,
+}
+
+
+def _get_spread_limit(symbol: str) -> float:
+    return SPREAD_LIMITS_PIPS.get(symbol.upper(), SPREAD_LIMITS_PIPS["DEFAULT"])
 
 
 # ── Tick snapshot ─────────────────────────────────────────────
@@ -78,7 +88,7 @@ class TickSnapshot:
     @property
     def is_tradeable(self) -> bool:
         """Quick check — should we even consider trading this symbol right now?"""
-        return self.liquidity in ("NORMAL",) and self.spread_multiple < 5.0
+        return self.liquidity in ("NORMAL", "THIN") and self.spread_multiple < 10.0
 
     def to_dict(self) -> Dict:
         return {
@@ -134,22 +144,22 @@ class LiveFeed:
         # Push to rolling buffer
         now = time.time()
         record = {
-            "time":      now,
-            "bid":       tick.bid,
-            "ask":       tick.ask,
-            "last":      tick.last if tick.last else (tick.bid + tick.ask) / 2,
-            "spread":    spread_pips,
+            "time":   now,
+            "bid":    tick.bid,
+            "ask":    tick.ask,
+            "last":   tick.last if tick.last else (tick.bid + tick.ask) / 2,
+            "spread": spread_pips,
         }
         buf = self._buffers.setdefault(symbol, deque(maxlen=self._size))
         buf.append(record)
         self._last_fetch[symbol] = now
 
         # Compute intelligence metrics from the buffer
-        velocity = self._compute_velocity(buf, now)
-        pressure = self._compute_pressure(buf)
-        spread_median = self._compute_spread_median(buf)
+        velocity       = self._compute_velocity(buf, now)
+        pressure       = self._compute_pressure(buf)
+        spread_median  = self._compute_spread_median(buf)
         spread_multiple = (spread_pips / spread_median) if spread_median > 0 else 1.0
-        liquidity = self._classify_liquidity(spread_pips, spread_multiple, velocity)
+        liquidity      = self._classify_liquidity(spread_pips, spread_multiple, velocity)
 
         return TickSnapshot(
             symbol=symbol,
@@ -220,47 +230,83 @@ class LiveFeed:
 
     @staticmethod
     def _classify_liquidity(spread_pips: float, spread_multiple: float, velocity: float) -> str:
-        """Classify current liquidity condition — used as a hard gate.
+        """Classify current liquidity condition.
+
+        DAY 82+ FIX:
+          spread_pips == 0 আর CLOSED না। MT5 off-hours-এ cached zero spread
+          দিতে পারে কিন্তু market আসলে open থাকে। তাই THIN দেওয়া হলো —
+          is_safe_to_trade() trade_mode দিয়ে truly closed যাচাই করবে।
 
         NORMAL    — typical spread, normal tick activity
-        THIN      — very low velocity (off-hours) → wider slippage risk
+        THIN      — low velocity OR zero spread (off-hours / light session)
         EXPLOSIVE — spread blew up >5x normal (news just hit) → DO NOT TRADE
-        CLOSED    — spread is zero (market closed)
         """
-        if spread_pips == 0:
-            return "CLOSED"
         if spread_multiple >= 5.0:
             return "EXPLOSIVE"
-        if velocity < 0.1:  # less than 1 tick per 10 seconds
+        if spread_pips == 0 or velocity < 0.1:
             return "THIN"
         return "NORMAL"
 
     # ── Hard safety gates (used by ABSOLUTE_SAFETY) ────────────
 
-    def is_safe_to_trade(self, symbol: str, max_spread_multiple: float = None) -> tuple[bool, str]:
-        """Quick gate for ABSOLUTE_SAFETY — returns (safe, reason)."""
-        # Default threshold increased to 10x for volatility tolerance
+    def is_safe_to_trade(
+        self,
+        symbol: str,
+        max_spread_multiple: float = None,
+    ) -> tuple[bool, str]:
+        """
+        ABSOLUTE_SAFETY gate — returns (safe, reason).
+
+        DAY 82+ FIX:
+          TEST_MODE=true のとき: trade_mode==0 だけ block、
+          spread/velocity/liquidity は無視する。
+          これにより off-hours でも verification trade が通る。
+
+          PRODUCTION (TEST_MODE=false): symbol のデフォルト spread 閾値を
+          使用し、EXPLOSIVE と over-limit spread をブロックする。
+        """
         if max_spread_multiple is None:
             max_spread_multiple = 10.0
-        
+
+        _test_mode = os.getenv("TEST_MODE", "false").lower() == "true"
+
+        # ── TEST_MODE: trade_mode チェックのみ ──────────────────
+        if _test_mode:
+            if not MT5_AVAILABLE:
+                # MT5 なければ pass — paper/simulation で動作
+                return True, "OK (TEST_MODE, MT5 unavailable)"
+            try:
+                info = mt5.symbol_info(symbol)
+                if info is not None and info.trade_mode == 0:
+                    log.warning(
+                        f"[ABSOLUTE_SAFETY] {symbol} trade_mode=0 — "
+                        f"truly disabled by broker"
+                    )
+                    return False, f"{symbol} trade_mode=0 (disabled by broker)"
+                # trade_mode=4 (Full) বা অন্য যেকোনো — allow
+                return True, f"OK (TEST_MODE, trade_mode={getattr(info, 'trade_mode', '?')})"
+            except Exception as e:
+                log.warning(f"[ABSOLUTE_SAFETY] trade_mode check failed: {e} — allowing")
+                return True, f"OK (TEST_MODE, trade_mode check error: {e})"
+
+        # ── PRODUCTION MODE ─────────────────────────────────────
         snap = self.get_snapshot(symbol)
         if snap is None:
             return False, "MT5 unavailable or no tick data"
-        
-        # TEST_MODE bypass: Ignore liquidity/spread gates for verification
-        import os
-        if os.getenv("TEST_MODE", "false").lower() == "true":
-            if snap.liquidity == "CLOSED":
-                return False, f"{symbol} market closed (Hard Stop)"
-            # In TEST_MODE, we only block if market is truly closed, ignore spread/explosive
-            return True, "OK (TEST_MODE)"
 
-        if snap.liquidity == "CLOSED":
-            return False, f"{symbol} market closed"
         if snap.liquidity == "EXPLOSIVE":
-            return False, f"{symbol} spread exploded ({snap.spread_multiple:.1f}x normal)"
-        if snap.spread_multiple >= max_spread_multiple:
-            return False, f"{symbol} spread {snap.spread_multiple:.1f}x exceeds limit"
+            return False, (
+                f"{symbol} spread exploded "
+                f"({snap.spread_multiple:.1f}x normal)"
+            )
+
+        sym_spread_limit = _get_spread_limit(symbol)
+        if snap.spread_pips > sym_spread_limit:
+            return False, (
+                f"{symbol} spread {snap.spread_pips:.1f} pips "
+                f"exceeds limit {sym_spread_limit:.1f} pips"
+            )
+
         return True, "OK"
 
 

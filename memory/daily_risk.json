@@ -1,8 +1,11 @@
 {
-  "date": "2026-06-24",
+  "date": "2026-06-26",
   "total_loss_usd": 0,
   "total_win_usd": 0,
-  "open_trades": 0,
-  "open_pairs": [],
+  "open_trades": 2,
+  "open_pairs": [
+    "EURUSD",
+    "USDJPY"
+  ],
   "trades": []
 }

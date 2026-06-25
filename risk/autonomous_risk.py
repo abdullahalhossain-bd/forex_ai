@@ -212,8 +212,13 @@ class AutonomousRiskManager:
                 symbol, signal, emergency["reason"], mode_config,
             )
 
-        # Step 3: Daily loss limit check
-        if self._recent_performance["daily_loss_pct"] >= 3.0:
+        # Step 3: Daily loss limit check (Day 81+ — load from config)
+        try:
+            from config import DAILY_LOSS_LIMIT_PCT as _DLL
+            _daily_limit = float(_DLL)
+        except Exception:
+            _daily_limit = 20.0
+        if self._recent_performance["daily_loss_pct"] >= _daily_limit:
             return self._build_rejection(
                 symbol, signal,
                 f"Daily loss limit reached ({self._recent_performance['daily_loss_pct']:.1f}%)",

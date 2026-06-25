@@ -33,8 +33,10 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -102,6 +104,66 @@ def log_llm_call_failure(
     return info
 
 
+# ── Groq 429 retry-after parser ────────────────────────────────────
+#
+# Groq's TPD (tokens-per-day) rate-limit response looks like:
+#   "Rate limit reached for model `llama-3.3-70b-versatile` ...
+#    Please try again in 10m1.344s. Need more tokens? ..."
+#
+# The previous code hardcoded a 30-second cooldown when rate_limited=True,
+# which is wildly wrong: the actual cooldown can be minutes to hours.
+# This parser extracts the real wait time so the KeyHealth object
+# disables the key for the right duration.
+
+_GROQ_RETRY_RE_MMSS = re.compile(r"(\d+)m\s*([\d.]+)s")
+_GROQ_RETRY_RE_SS   = re.compile(r"([\d.]+)\s*s")
+_GROQ_RETRY_RE_MM   = re.compile(r"(\d+)\s*m(?:in)?(?:ute)?s?", re.IGNORECASE)
+_GROQ_RETRY_RE_HDR  = re.compile(r"retry[-_ ]?after['\"\s:=]+(\d+)", re.IGNORECASE)
+
+# Hard caps so a single malformed error message can't lock a key for an hour
+MIN_RETRY_COOLDOWN = 60       # seconds — even "1s" gets bumped to 60s
+MAX_RETRY_COOLDOWN = 60 * 30  # 30 min cap — TPD resets are rarely longer than this
+DEFAULT_RETRY_COOLDOWN = 300  # 5 min fallback if parsing fails
+
+
+def parse_groq_retry_after(error_str: str) -> int:
+    """Parse 'Please try again in Xm Y.Ys' from a Groq 429 response.
+
+    Returns the cooldown in seconds (clamped to [60, 1800]) plus a +5s
+    safety margin. Falls back to DEFAULT_RETRY_COOLDOWN (300s) if no
+    parseable duration is found.
+    """
+    if not error_str:
+        return DEFAULT_RETRY_COOLDOWN
+    s = str(error_str)
+
+    # Format: "10m1.344s"
+    m = _GROQ_RETRY_RE_MMSS.search(s)
+    if m:
+        total = int(m.group(1)) * 60 + float(m.group(2))
+        return max(MIN_RETRY_COOLDOWN, min(MAX_RETRY_COOLDOWN, int(total) + 5))
+
+    # Format: "45s" or "1.344s"
+    m = _GROQ_RETRY_RE_SS.search(s)
+    if m:
+        total = float(m.group(1))
+        return max(MIN_RETRY_COOLDOWN, min(MAX_RETRY_COOLDOWN, int(total) + 5))
+
+    # Format: "10m" or "10 minutes"
+    m = _GROQ_RETRY_RE_MM.search(s)
+    if m:
+        total = int(m.group(1)) * 60
+        return max(MIN_RETRY_COOLDOWN, min(MAX_RETRY_COOLDOWN, total + 5))
+
+    # HTTP-style "Retry-After: 120"
+    m = _GROQ_RETRY_RE_HDR.search(s)
+    if m:
+        total = int(m.group(1))
+        return max(MIN_RETRY_COOLDOWN, min(MAX_RETRY_COOLDOWN, total + 5))
+
+    return DEFAULT_RETRY_COOLDOWN
+
+
 # ── Key health tracking ─────────────────────────────────────────────
 
 @dataclass
@@ -149,9 +211,15 @@ class KeyHealth:
         ))
 
         if rate_limited:
-            # Disable for only 30 seconds on rate limit (was 60 — too long)
-            self.rate_limited_until = time.time() + 30
-            log.warning(f"[LLM Keys] {self.provider} key #{self.index + 1} rate-limited, disabled for 30s")
+            # Parse "Please try again in 10m1.344s" from Groq's 429 body and
+            # use the real cooldown.  Falls back to DEFAULT_RETRY_COOLDOWN
+            # (300s) if parsing fails.  Clamped to [60, 1800] seconds.
+            cooldown = parse_groq_retry_after(error)
+            self.rate_limited_until = time.time() + cooldown
+            log.warning(
+                f"[LLM Keys] {self.provider} key #{self.index + 1} "
+                f"rate-limited, disabled for {cooldown}s"
+            )
         elif "401" in error or "unauthorized" in err_lower:
             # Invalid key — disable permanently
             self.is_active = False
@@ -326,6 +394,101 @@ class LLMKeyManager:
             if available:
                 available[(self._gemini_index - 1) % len(available)].mark_failure(error, rate_limited)
 
+    # ── Per-cycle LLM call throttle (Day 81+) ───────────────────
+    # Prevents the Groq rate-limit storm by capping total LLM calls
+    # per "cycle" (1 cycle = 1 symbol processed by 1 AITrader).
+    # The cycle boundary is marked by reset_cycle_calls() which
+    # trader.py calls at the top of each run_cycle().
+
+    _cycle_call_count: int = 0
+    _cycle_call_lock: threading.Lock = threading.Lock()
+    _last_call_ts: float = 0.0
+
+    # Day 81+ hotfix: GLOBAL rolling-window cap.  Per-cycle cap alone
+    # is not enough — with 6 pairs × 5 calls/cycle = 30 calls in 2
+    # minutes, all 6 Groq keys hit TPD limit.  This global cap limits
+    # total calls across ALL cycles in a rolling 60-second window.
+    # Default 12 calls/min (≈ 2 cycles × 6 calls each).
+    _global_call_timestamps: deque = deque()
+    _global_call_lock: threading.Lock = threading.Lock()
+
+    def reset_cycle_calls(self) -> None:
+        """Call at the start of each symbol cycle to reset the per-cycle
+        LLM call counter.  trader.py calls this in run_cycle().
+
+        Note: the GLOBAL rolling-window cap is NOT reset here — it
+        persists across cycles to prevent the cross-cycle Groq storm.
+        """
+        with self._cycle_call_lock:
+            self._cycle_call_count = 0
+
+    def check_cycle_throttle(self) -> tuple[bool, str]:
+        """Check if the current cycle has exceeded MAX_LLM_CALLS_PER_CYCLE.
+
+        Returns (allowed, reason).  When allowed=False, the caller should
+        skip the LLM call and use a fallback (e.g. rule engine signal).
+        Also enforces LLM_CALL_INTERVAL_SEC between calls to the same
+        provider (Groq free-tier rate-limit mitigation).
+
+        Day 81+ hotfix: also enforces a GLOBAL rolling-window cap of
+        MAX_LLM_CALLS_PER_MIN (default 12) calls per 60 seconds across
+        all cycles.  Without this, 6 pairs × 5 calls/cycle = 30 calls
+        in 2 minutes drains all 6 Groq keys' TPD quota.
+        """
+        try:
+            from config import (
+                MAX_LLM_CALLS_PER_CYCLE,
+                LLM_CALL_INTERVAL_SEC,
+                MAX_LLM_CALLS_PER_MIN,
+            )
+        except Exception:
+            MAX_LLM_CALLS_PER_CYCLE = 8
+            LLM_CALL_INTERVAL_SEC = 1.0
+            MAX_LLM_CALLS_PER_MIN = 12
+
+        # ── Global rolling-window cap (cross-cycle) ──
+        now = time.time()
+        with self._global_call_lock:
+            # Evict timestamps older than 60 seconds
+            cutoff = now - 60.0
+            while self._global_call_timestamps and self._global_call_timestamps[0] < cutoff:
+                self._global_call_timestamps.popleft()
+            if len(self._global_call_timestamps) >= MAX_LLM_CALLS_PER_MIN:
+                # Calculate sleep time until oldest timestamp exits window
+                oldest = self._global_call_timestamps[0]
+                wait_for = max(0.0, oldest + 60.0 - now)
+                return False, (
+                    f"global cap reached ({len(self._global_call_timestamps)}/"
+                    f"{MAX_LLM_CALLS_PER_MIN} in last 60s) — retry in {wait_for:.0f}s"
+                )
+
+        with self._cycle_call_lock:
+            # Per-cycle count cap
+            if self._cycle_call_count >= MAX_LLM_CALLS_PER_CYCLE:
+                return False, (
+                    f"cycle cap reached ({self._cycle_call_count}/"
+                    f"{MAX_LLM_CALLS_PER_CYCLE}) — skip LLM, use fallback"
+                )
+            # Per-call interval enforcement
+            now = time.time()
+            elapsed = now - self._last_call_ts
+            if elapsed < LLM_CALL_INTERVAL_SEC:
+                sleep_for = LLM_CALL_INTERVAL_SEC - elapsed
+                # Release lock during sleep so other threads can proceed
+                self._cycle_call_lock.release()
+                try:
+                    time.sleep(sleep_for)
+                finally:
+                    self._cycle_call_lock.acquire()
+            self._cycle_call_count += 1
+            self._last_call_ts = time.time()
+
+        # Record this call in the global window (after cycle lock released)
+        with self._global_call_lock:
+            self._global_call_timestamps.append(time.time())
+
+        return True, f"call {self._cycle_call_count}/{MAX_LLM_CALLS_PER_CYCLE} (global {len(self._global_call_timestamps)}/{MAX_LLM_CALLS_PER_MIN})"
+
     # ── Status ────────────────────────────────────────────────────
 
     def status(self) -> Dict[str, Any]:
@@ -379,6 +542,72 @@ class LLMKeyManager:
     @property
     def has_any_llm(self) -> bool:
         return self.has_any_groq or self.has_any_gemini
+
+    # ── Global exhaustion detection ──────────────────────────────
+    # When all keys for a provider are rate-limited simultaneously,
+    # the previous code would return None from get_groq_client() and
+    # callers would bail immediately — but the next call cycle (10s
+    # later via the supervisor) would call get_groq_client() again,
+    # and again, and again, hammering the still-rate-limited keys
+    # and producing the 429 storm seen in the production logs.
+    #
+    # The fix: when all keys are exhausted, callers should *wait*
+    # for the soonest-recovering key instead of looping fast.
+
+    @property
+    def all_groq_rate_limited(self) -> bool:
+        """True if there is at least one Groq key AND all are unavailable."""
+        with self._lock:
+            return bool(self._groq_keys) and not any(
+                k.is_available for k in self._groq_keys
+            )
+
+    @property
+    def all_gemini_rate_limited(self) -> bool:
+        with self._lock:
+            return bool(self._gemini_keys) and not any(
+                k.is_available for k in self._gemini_keys
+            )
+
+    def wait_for_any_groq(
+        self,
+        max_wait: float = 300.0,
+        poll_interval: float = 10.0,
+    ) -> bool:
+        """Block until at least one Groq key becomes available, or
+        ``max_wait`` seconds elapse.
+
+        Returns True if a key is now available, False on timeout.  Use
+        this from callers when ``get_groq_client()`` returns None to
+        avoid hammering the API in a tight retry loop.
+
+        Logs an ETA every poll cycle so the operator can see progress.
+        """
+        deadline = time.time() + max_wait
+        while True:
+            with self._lock:
+                if any(k.is_available for k in self._groq_keys):
+                    return True
+                # ETA = soonest rate_limited_until among Groq keys
+                soonest = min(
+                    (k.rate_limited_until for k in self._groq_keys
+                     if k.rate_limited_until > time.time()),
+                    default=0.0,
+                )
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                return self.has_any_groq
+            eta = max(0.0, soonest - time.time())
+            log.warning(
+                f"[LLM Keys] All Groq keys exhausted — "
+                f"soonest recovers in {eta:.0f}s, "
+                f"max_wait remaining {remaining:.0f}s"
+            )
+            # Sleep the smaller of poll_interval / eta / remaining
+            sleep_for = min(poll_interval, max(2.0, eta), remaining)
+            time.sleep(sleep_for)
+        # unreachable
+        return self.has_any_groq
 
 
 # ── Singleton ───────────────────────────────────────────────────────

@@ -52,7 +52,22 @@ def _resolve_filling_mode(broker_symbol: str):
         if mode & 4:  # RETURN supported
             return mt5.ORDER_FILLING_RETURN
         return mt5.ORDER_FILLING_IOC  # safest default
-    except Exception:
+    except Exception as e:
+        # Day 81+ hotfix: was silent `return mt5.ORDER_FILLING_IOC`.
+        # If symbol_info raises (disconnect, symbol not in Market Watch),
+        # silently defaulting to IOC meant the next order_send would fail
+        # with retcode=10030 and the operator had no idea why.  Now we
+        # log the exception so the root cause is visible.
+        log.warning(
+            f"[OrderManager] _resolve_filling_mode({broker_symbol}) raised: {e} "
+            f"— falling back to ORDER_FILLING_IOC"
+        )
+        try:
+            from core.execution_logger import log_broker_last_error
+            log_broker_last_error(symbol=broker_symbol, error=e,
+                                  stage="resolve_filling_mode")
+        except Exception:
+            pass
         return mt5.ORDER_FILLING_IOC
 
 
@@ -369,9 +384,46 @@ class OrderManager:
     def _check_confirmation(self, result, attempt: int) -> dict:
         """mt5.order_send()-এর result.retcode চেক করে success/failure ঠিক করে।"""
         if result is None:
-            return {"success": False, "reason": "order_send returned None", "retryable": True}
+            # Day 81+ hotfix: log mt5.last_error() so the operator can
+            # see WHY order_send returned None (terminal disconnected,
+            # IPC pipe broken, terminal not running, etc.).  Previously
+            # this was silent — only "order_send returned None" was
+            # logged, with no MT5-side diagnostic.
+            try:
+                last_err = mt5.last_error()
+            except Exception:
+                last_err = "(last_error() itself failed)"
+            log.error(
+                f"[OrderManager] order_send returned None on attempt {attempt} — "
+                f"mt5.last_error()={last_err}"
+            )
+            try:
+                from core.execution_logger import log_broker_last_error
+                log_broker_last_error(symbol="?", error=last_err,
+                                      attempt=attempt, stage="order_send_none")
+            except Exception:
+                pass
+            return {
+                "success": False,
+                "reason": f"order_send returned None (last_error={last_err})",
+                "retryable": True,
+            }
 
         if result.retcode in RETCODE_SUCCESS:
+            # Day 81+ hotfix: log every successful order_send to logs/execution.log
+            try:
+                from core.execution_logger import log_broker_order_send
+                log_broker_order_send(
+                    symbol="?",  # caller doesn't pass symbol here; could refactor
+                    retcode=result.retcode,
+                    comment=getattr(result, "comment", None),
+                    price=result.price,
+                    volume=result.volume,
+                    ticket=result.order or result.deal,
+                    attempt=attempt,
+                )
+            except Exception:
+                pass
             return {
                 "success": True,
                 "ticket": result.order or result.deal,

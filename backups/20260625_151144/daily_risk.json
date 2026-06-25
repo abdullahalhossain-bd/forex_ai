@@ -1,0 +1,13 @@
+{
+  "date": "2026-06-25",
+  "total_loss_usd": 0,
+  "total_win_usd": 0,
+  "open_trades": 4,
+  "open_pairs": [
+    "AUDUSD",
+    "EURUSD",
+    "GBPUSD",
+    "USDJPY"
+  ],
+  "trades": []
+}

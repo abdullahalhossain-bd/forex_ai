@@ -228,14 +228,36 @@ OUTPUT FORMAT — Return ONLY valid JSON, no extra text:
 
     # ── LLM callers (multi-key retry) ───────────────────────────
     def _call_groq(self, prompt: str) -> str | None:
-        """Call Groq with multi-key retry. If current key fails, tries next."""
+        """Call Groq with multi-key retry. If current key fails, tries next.
+
+        If ALL keys are exhausted (e.g. Groq free-tier TPD hit), waits
+        for the soonest-recovering key instead of bailing immediately —
+        this prevents the 429 storm + supervisor restart loop seen in
+        production logs.
+
+        Day 81+ hotfix: per-cycle throttle caps total LLM calls per
+        symbol cycle to MAX_LLM_CALLS_PER_CYCLE (default 5).  Also
+        enforces LLM_CALL_INTERVAL_SEC between calls (default 1.0s)
+        to prevent the Groq free-tier rate-limit storm.
+        """
+        # Per-cycle throttle check
+        if hasattr(self, '_key_manager') and self._key_manager:
+            allowed, reason = self._key_manager.check_cycle_throttle()
+            if not allowed:
+                log.info(f"[AIAnalyst] Groq skipped — {reason}")
+                return None
+
         max_retries = 3
         for attempt in range(max_retries):
             client = self._groq_client
             if client is None and hasattr(self, '_key_manager') and self._key_manager:
                 client = self._key_manager.get_groq_client()
+            if client is None and hasattr(self, '_key_manager') and self._key_manager:
+                # All keys exhausted — wait for one to recover (max 5 min)
+                if self._key_manager.wait_for_any_groq(max_wait=300):
+                    client = self._key_manager.get_groq_client()
             if client is None:
-                log.warning("No Groq client available")
+                log.warning("No Groq client available after wait — falling back")
                 return None
             try:
                 resp = client.chat.completions.create(

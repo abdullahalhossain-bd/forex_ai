@@ -153,6 +153,24 @@ class AnalysisAgent:
                 "dead_zone_reason":  "Low liquidity dead zone — no trades",
             }
 
+        # ── 0.5 Default contexts (Day 81+ hotfix) ────────────────
+        # These 7 ctx dicts are produced by analysis stages that run LATER
+        # in the pipeline (Day 66 NewsIntelligence, Day 67 Confluence,
+        # Day 68 FeatureStore, Day 69 ModelPredictor, Day 70 Ensemble,
+        # Day 71 RL Agent, Day 72 MasterDecision). However, the TEST_MODE
+        # aggressive fast-path below (line ~390) returns early and
+        # references them. Without these defaults, the first early return
+        # raises UnboundLocalError → supervisor catches → restart → crash
+        # again → infinite restart loop.  Initialize ALL of them to {} so
+        # every return path has a consistent schema.
+        news_intel_ctx      = {}
+        confluence_ctx      = {}
+        feature_vector_ctx  = {}
+        ml_prediction_ctx   = {}
+        ensemble_ctx        = {}
+        rl_ctx              = {}
+        master_decision_ctx = {}
+
         # ── 1. Candlestick Patterns ───────────────────────────
         detector = PatternDetector()
         df       = detector.run_full_detection(df)
@@ -364,14 +382,46 @@ class AnalysisAgent:
             master_ctx = master.get_ai_context(master_result)
         except Exception as e:
             log.warning(f"[AnalysisAgent] MasterAnalyst error: {e}")
+            # Day 81+ hotfix (Barrier 2): when MasterAnalyst raises (LLM
+            # unavailable, rate-limited, JSON parse error, etc.), master_ctx
+            # stayed as {} which downstream code reads as master_signal=None
+            # → final_signal never gets overridden from rule signal.  Populate
+            # a safe default using the rule-engine signal so downstream
+            # DecisionAgent + trader.py see a real signal.
+            _rule_sig = (signal_result or {}).get("signal", "WAIT")
+            _rule_conf = (signal_result or {}).get("confidence", 0)
+            master_ctx = {
+                "master_signal":     _rule_sig,
+                "master_confidence": _rule_conf,
+                "master_entry":      (signal_result or {}).get("entry"),
+                "master_sl":         (signal_result or {}).get("sl"),
+                "master_tp1":        (signal_result or {}).get("tp"),
+                "master_tp2":        None,
+                "master_story":      f"LLM unavailable — rule engine fallback {_rule_sig} ({_rule_conf}%)",
+                "master_risks":      ["LLM analysis unavailable — rule engine signal only"],
+                "master_critique":   "",
+            }
+            log.info(
+                f"[AnalysisAgent] MasterAnalyst fallback → master_signal={_rule_sig} "
+                f"conf={_rule_conf}% (rule-engine signal used as master)"
+            )
 
         # ── Final Signal Resolution ───────────────────────────
-        final_signal = signal_result["signal"]
+        # Day 81+ hotfix: signal_result could be None if SignalEngine
+        # raised inside its try block — use defensive .get() to avoid
+        # 'NoneType' object is not subscriptable crash.
+        if not isinstance(signal_result, dict):
+            log.error(f"[AnalysisAgent] signal_result is {type(signal_result).__name__}, expected dict — using NO TRADE")
+            signal_result = {"signal": "NO TRADE", "confidence": 0}
+        final_signal = signal_result.get("signal", "NO TRADE")
 
         # Day 81+ AGGRESSIVE TEST_MODE: If TEST_MODE is true and the rule engine
-        # has a tradeable signal (BUY/SELL/STRONG_BUY/STRONG_SELL with conf >= 30),
+        # has a tradeable signal (BUY/SELL/STRONG_BUY/STRONG_SELL with conf >= 10),
         # USE IT DIRECTLY. Skip ALL gates - MasterAnalyst/news/session/conflict.
         # This is the "just trade something" mode for verifying MT5 execution.
+        # Day 81+ hotfix #2: lowered threshold from 30 → 10 so weak BUY/SELL
+        # signals also flow through.  Without this, the bot stays in WAIT
+        # when market is choppy and rule engine confidence is 15-25%.
         _test_mode = False
         try:
             from config import TEST_MODE
@@ -387,13 +437,16 @@ class AnalysisAgent:
         elif "STRONG_SELL" in str(rule_sig_raw):
             rule_sig_normalized = "SELL"
 
-        if _test_mode and rule_sig_normalized in ("BUY", "SELL") and rule_conf >= 30:
+        if _test_mode and rule_sig_normalized in ("BUY", "SELL") and rule_conf >= 10:
             final_signal = rule_sig_normalized
             log.info(
                 f"[AnalysisAgent] -> {final_signal} "
                 f"(TEST_MODE AGGRESSIVE: Rule={rule_sig_raw} {rule_conf}% — "
                 f"BYPASSING all gates for MT5 verification)"
             )
+
+            # ── /DEBUG ──────────────────────────────────────────────
+
             # Skip ALL remaining gates - go straight to return
             # Build minimal context needed downstream
             return {
@@ -596,6 +649,8 @@ class AnalysisAgent:
                 "signal": signal_result,
                 "bias_ctx": bias_ctx,
             }
+
+            # ── /DEBUG ──────────────────────────────────────────────────────
 
             engine = get_confluence_engine()
             # Pull news-blocked pairs for the validator

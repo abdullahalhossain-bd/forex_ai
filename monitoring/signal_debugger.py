@@ -161,7 +161,12 @@ class CycleDebug:
             "WAIT":    "⏳ WAIT",
             "NO_TRADE":"⛔ NO_TRADE",
         }.get(self.final_action, self.final_action)
-        lines.append(f"│ FINAL: {action_icon:<9} — {self.final_reason[:24]:<24} │")
+        # Day 81+ hotfix: self.final_reason can be None (when trade
+        # succeeds and no rejection reason was set).  Coerce to str
+        # before subscripting — otherwise 'NoneType' object is not
+        # subscriptable crash after successful fills.
+        reason = (self.final_reason or "")[:24]
+        lines.append(f"│ FINAL: {action_icon:<9} — {reason:<24} │")
         if self.blocked_at:
             lines.append(f"│ ────────────────────────────────────────── │")
             lines.append(f"│ BLOCKED_AT: {self.blocked_at:<31} │")

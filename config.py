@@ -31,9 +31,21 @@ PROJECT_NAME = "Autonomous Forex AI Trader"
 INITIAL_BALANCE = 10000
 INITIAL_CAPITAL = INITIAL_BALANCE  # Alias for compatibility
 RISK_PER_TRADE = 0.01              # 1% per trade (professional standard)
-MAX_DAILY_LOSS = 0.03              # 3% daily loss limit
-MAX_OPEN_TRADES = 5                # 5 concurrent positions (was 3) — better for 28 pairs
-MAX_POSITIONS = 7                  # 7 portfolio-wide (was 5) — slight headroom
+MAX_DAILY_LOSS = 0.03              # 3% daily loss limit (legacy — kept for backward compat)
+
+# ── Daily Loss Limit (Day 81+ — single source of truth) ──────
+# All risk modules (RiskEngine, CircuitBreaker, KillSwitch,
+# DrawdownController, AutonomousRisk, RiskAgent) read from this.
+# Override in .env:  DAILY_LOSS_LIMIT_PCT=20
+# Default 20.0% per user request (was 3.0% hard-coded everywhere).
+# ⚠️  WARNING: 20% daily loss on a $10k account = $2,000 max loss/day.
+# This is aggressive — lower it (e.g. 5.0) for production trading.
+DAILY_LOSS_LIMIT_PCT = float(os.getenv("DAILY_LOSS_LIMIT_PCT", "20.0"))
+# Day 81+ hotfix: bumped to 20 per user request.  Was 5 — too restrictive
+# for 6-pair universe where each pair deserves its own slot.  At 1% risk
+# per trade, 20 trades = max 20% account risk (matches DAILY_LOSS_LIMIT_PCT).
+MAX_OPEN_TRADES = int(os.getenv("MAX_OPEN_TRADES", "20"))
+MAX_POSITIONS = int(os.getenv("MAX_POSITIONS", "25"))    # portfolio-wide headroom
 MAX_RISK_PER_PAIR = 0.02           # NEW: max 2% risk on a single pair
 
 # ── Market & Data Settings ─────────────────────────────────────
@@ -44,26 +56,36 @@ DATA_SOURCE = "yfinance"
 # Per user request — agent trades the FULL forex universe + precious metals.
 # Each pair gets its own AITrader instance in AutonomousTraderSystem.
 # (MAX_OPEN_TRADES = 5 still applies, so only 5 concurrent positions max.)
+#
+# Day 81+ hotfix: reduced from 30 pairs → 6 majors.
+# Reason: with 30 pairs × ~3 LLM calls/pair × ~1000 tokens/call = ~90k
+# tokens per cycle.  Groq free-tier TPD limit is 100k/key, so even with
+# 6 keys (600k TPD) the bot exhausted all keys in ~7 cycles and entered
+# a 429 storm + supervisor restart loop.  6 majors keeps the same
+# analytical depth while cutting token usage ~5x.  Re-enable more pairs
+# only after switching to Groq Dev tier or adding response caching.
+#
+# To restore the original 30-pair list, uncomment the block below.
 SYMBOLS = [
-    # ── MAJORS (7) — USD on one side ──
-    "EURUSD", "GBPUSD", "USDJPY", "USDCHF",
-    "USDCAD", "AUDUSD", "NZDUSD",
-    # ── MINORS / CROSSES (21) ──
-    # EUR crosses (6)
-    "EURGBP", "EURJPY", "EURCHF", "EURAUD",
-    "EURCAD", "EURNZD",
-    # GBP crosses (5)
-    "GBPJPY", "GBPCHF", "GBPAUD", "GBPCAD", "GBPNZD",
-    # AUD crosses (4)
-    "AUDJPY", "AUDCHF", "AUDCAD", "AUDNZD",
-    # NZD crosses (3)
-    "NZDJPY", "NZDCHF", "NZDCAD",
-    # CAD/CHF crosses (3)
-    "CADJPY", "CADCHF", "CHFJPY",
-    # ── METALS / COMMODITIES (2) ──
-    "XAUUSD",  # Gold
-    "XAGUSD",  # Silver
+    # ── MAJORS (6) — high liquidity, tight spreads ──
+    "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "XAUUSD",
 ]
+
+# Original 30-pair list (kept for reference — uncomment to restore):
+# SYMBOLS = [
+#     # ── MAJORS (7) — USD on one side ──
+#     "EURUSD", "GBPUSD", "USDJPY", "USDCHF",
+#     "USDCAD", "AUDUSD", "NZDUSD",
+#     # ── MINORS / CROSSES (21) ──
+#     "EURGBP", "EURJPY", "EURCHF", "EURAUD",
+#     "EURCAD", "EURNZD",
+#     "GBPJPY", "GBPCHF", "GBPAUD", "GBPCAD", "GBPNZD",
+#     "AUDJPY", "AUDCHF", "AUDCAD", "AUDNZD",
+#     "NZDJPY", "NZDCHF", "NZDCAD",
+#     "CADJPY", "CADCHF", "CHFJPY",
+#     # ── METALS / COMMODITIES (2) ──
+#     "XAUUSD", "XAGUSD",
+# ]
 
 # ── Timeframes ─────────────────────────────────────────────────
 DEFAULT_TIMEFRAME = "15m"
@@ -105,9 +127,73 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 
 # ── Execution Mode ─────────────────────────────────────────────
-# "paper"    -> Local PaperTrader simulation (default, safe)
-# "mt5_demo" -> Real MT5 demo account execution
-EXECUTION_MODE = os.getenv("EXECUTION_MODE", "paper").lower()
+# "mt5_demo" -> Real MT5 demo account execution (DEFAULT — user has MT5 set up)
+# "paper"    -> Legacy paper mode (ExecutionRouter no longer supports this —
+#               will raise ValueError if set).  Kept for backward compat
+#               reference only.
+#
+# Day 81+ hotfix: was defaulting to "paper", but ExecutionRouter only
+# accepts "mt5_demo" and raises ValueError for anything else.  If .env
+# failed to load (e.g. wrong working dir, missing file), the bot would
+# crash on boot with "Unknown EXECUTION_MODE: paper".  Default is now
+# "mt5_demo" to match the only supported mode.
+EXECUTION_MODE = os.getenv("EXECUTION_MODE", "mt5_demo").lower()
+
+# ── SIMULATION MODE ─────────────────────────────────────────────
+# When True, ExecutionRouter uses SimulatedExecutor instead of real MT5.
+# The full signal → risk → approval → router chain runs, but the final
+# order is logged to logs/execution.log as "broker.order_send" with
+# retcode=10009 (TRADE_RETCODE_DONE) — NO real broker contact.
+#
+# Use this to verify the order-flow chain end-to-end without a live
+# MT5 terminal.  Especially useful for:
+#   - Diagnosing why trades aren't placed (run + tail logs/execution.log)
+#   - CI / unit tests of the execution path
+#   - Dry-run on a fresh VPS before plugging in MT5 credentials
+#
+# Default: False (preserve existing behaviour).
+SIMULATION_MODE = os.getenv("SIMULATION_MODE", "false").lower() == "true"
+
+# ── Position Sizing Hard Caps (Day 81+ loss-prevention) ───────
+# Absolute maximum lot size per trade, regardless of what RiskEngine
+# or PositionSizer computes.  Default 0.20 — for a $10k account with
+# 1% risk ($100) and a 15-pip SL on EURUSD, the math gives ~0.67 lot,
+# but multipliers (Kelly × vol × conf × corr) can compound to 2-3x.
+# This cap is the LAST line of defense against lot explosion.
+#
+# Override per account size:
+#   $1k  → MAX_LOT=0.05
+#   $10k → MAX_LOT=0.20  (default)
+#   $50k → MAX_LOT=1.00
+#   $100k→ MAX_LOT=2.00
+MAX_LOT = float(os.getenv("MAX_LOT", "0.20"))
+
+# Maximum LLM calls per symbol cycle.  Each cycle fires:
+#   - SentimentModel (1 call)            — from sentiment_data provider
+#   - AIAnalyst._call_groq (1 call)      — classic LLM analyst
+#   - MasterAnalyst._call_llm (1 call)   — master brain
+#   - NewsIntelligence (sometimes 1)     — news bias adjustment
+# Total ~3-4 calls per symbol.  Was 5 — too tight, caused LLM throttle
+# to kick in before all 3 callers got a turn.  Default now 8 to leave
+# headroom for retries.
+MAX_LLM_CALLS_PER_CYCLE = int(os.getenv("MAX_LLM_CALLS_PER_CYCLE", "8"))
+
+# Minimum delay (seconds) between LLM calls to the same provider.
+# Groq free tier rate-limits aggressively; this prevents the 429 storm.
+LLM_CALL_INTERVAL_SEC = float(os.getenv("LLM_CALL_INTERVAL_SEC", "1.0"))
+
+# GLOBAL rolling-window cap: max LLM calls per 60 seconds across ALL
+# symbol cycles.  Per-cycle cap alone is not enough — with 6 pairs ×
+# 5 calls/cycle = 30 calls in 2 minutes, all 6 Groq keys hit TPD limit
+# (100k tokens/day each).  Default 12 calls/min = ~2 cycles worth.
+# This is the single most important setting for preventing the Groq
+# storm on free-tier accounts.
+MAX_LLM_CALLS_PER_MIN = int(os.getenv("MAX_LLM_CALLS_PER_MIN", "12"))
+
+# Telegram rate limit — max messages per minute.  Telegram's API
+# limit is 30 msg/sec globally but per-channel practical limit is ~20
+# msg/min before users mute the bot.  Default 10.
+TELEGRAM_MAX_MSG_PER_MIN = int(os.getenv("TELEGRAM_MAX_MSG_PER_MIN", "10"))
 
 # ── TEST MODE ─────────────────────────────────────────────────
 # When true (default for first-time MT5 demo verification): all safety

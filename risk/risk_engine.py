@@ -20,9 +20,31 @@ class RiskEngine:
     MAX_RISK_PC      = 1.0
     MIN_RR           = 2.0
     MAX_RR           = 5.0   # Day 81+ — masterclass: don't take trades with RR > 1:5
-    DAILY_LOSS_LIMIT = 3.0
-    MAX_OPEN_TRADES  = 3
+    DAILY_LOSS_LIMIT = 3.0  # default — overridden by config.DAILY_LOSS_LIMIT_PCT below
+    MAX_OPEN_TRADES  = 3    # default — overridden by config.MAX_OPEN_TRADES below
     ATR_SL_MULT      = 1.5
+    # Day 81+ hotfix: load MAX_LOT from config (default 0.20).
+    # Was hardcoded 100.0 — way too high, allowed lot explosion.
+    try:
+        from config import MAX_LOT as _CFG_MAX_LOT
+        MAX_LOT = float(_CFG_MAX_LOT)
+    except Exception:
+        MAX_LOT = 0.20
+    # Day 81+ hotfix: load DAILY_LOSS_LIMIT from config (single source
+    # of truth, default 20.0%).  Was hard-coded 3.0 — user wants 20.0.
+    try:
+        from config import DAILY_LOSS_LIMIT_PCT as _CFG_DLL
+        DAILY_LOSS_LIMIT = float(_CFG_DLL)
+    except Exception:
+        DAILY_LOSS_LIMIT = 20.0
+    # Day 81+ hotfix: load MAX_OPEN_TRADES from config (default 20).
+    # Was hard-coded 3 — too restrictive, blocked trades when only 3
+    # were open.  User wants 20 concurrent positions allowed.
+    try:
+        from config import MAX_OPEN_TRADES as _CFG_MOT
+        MAX_OPEN_TRADES = int(_CFG_MOT)
+    except Exception:
+        MAX_OPEN_TRADES = 20
 
     def __init__(self, balance: float = 1000.0, symbol: str = "EURUSD"):
         self.balance = balance
@@ -85,7 +107,13 @@ class RiskEngine:
         risk_usd = round(self.balance * self.MAX_RISK_PC / 100, 2)
         pip_val  = get_pip_value_usd(self.symbol)
         lot_raw  = risk_usd / (sl_pips * pip_val) if sl_pips > 0 else 0.01
-        lot      = round(max(0.01, min(lot_raw, 100.0)), 2)
+        # Day 81+ hotfix: cap at self.MAX_LOT (0.20 default), not 100.0.
+        lot      = round(max(0.01, min(lot_raw, self.MAX_LOT)), 2)
+        if lot_raw > self.MAX_LOT:
+            log.warning(
+                f"[RiskEngine] lot_raw={lot_raw:.2f} capped to MAX_LOT={self.MAX_LOT} "
+                f"(risk_usd=${risk_usd} sl_pips={sl_pips} pip_val=${pip_val})"
+            )
 
         margin_needed = lot * 1000
         if margin_needed > self.balance * 0.5:
@@ -111,11 +139,32 @@ class RiskEngine:
 
     def _correlation_check(self) -> dict:
         open_pairs = set(self._daily.get("open_pairs", []))
+        # Day 81+ hotfix: filter out stale pairs from daily_risk.json.
+        # The file's open_pairs list is updated when trades open (record_trade_open)
+        # and when trades close (record_trade_close via PaperTrader).  But
+        # if a trade closes externally (MT5 SL/TP hit, manual close, restart
+        # with fresh PaperTrader state), the file stays stale and blocks
+        # new trades on correlated pairs forever.  Cross-check against
+        # self._live_open_pairs (set by sync_open_positions from trader.py)
+        # which is the authoritative live state.
+        if hasattr(self, "_live_open_pairs") and isinstance(self._live_open_pairs, set):
+            # Use live state — overrides stale file state
+            open_pairs = self._live_open_pairs
         for group in CORRELATION_GROUPS:
             group_set = set(group)
             if self.symbol in group_set and open_pairs & group_set:
                 return {"allowed": False, "reason": f"Correlation conflict with {open_pairs & group_set}"}
         return {"allowed": True, "reason": "OK"}
+
+    def sync_open_positions(self, open_pairs: list[str] | set[str]) -> None:
+        """Day 81+ hotfix: called by trader.py before evaluate() to
+        inject the authoritative live open-pair list.  Overrides the
+        potentially-stale open_pairs in daily_risk.json.
+
+        Args:
+            open_pairs: list of pair symbols currently open (e.g. ['USDJPY']).
+        """
+        self._live_open_pairs = set(open_pairs) if open_pairs else set()
 
     def _load_daily(self) -> dict:
         os.makedirs("memory", exist_ok=True)
