@@ -1,102 +1,27 @@
-# ─── Secrets (NEVER commit) ─────────────────────────────────────
+```gitignore
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables
 .env
 .env.local
-.env.production
-.env.*.local
-*.key
-*.pem
-secrets/
+*.env.*
 
-# ─── Python ─────────────────────────────────────────────────────
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+# Logs
+*.log
 
-# ─── Virtual environments ───────────────────────────────────────
+# Dependencies and build artifacts
 venv/
-env/
-ENV/
-env.bak/
-venv.bak/
 .venv/
-
-# ─── IDE / Editor ───────────────────────────────────────────────
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
-Thumbs.db
-
-# ─── Logs ───────────────────────────────────────────────────────
-logs/*.log
-logs/*.log.*
-output.log
-boot_error.txt
-boot_output.txt
-
-# ─── Runtime databases & state (regenerated on first run) ──────
-database/trader.db
-database/trader.db-journal
-memory/*.db
-memory/*.db-journal
-memory/trade_memory.json
-memory/analysis_history.json
-memory/intermarket_history.json
-memory/daily_risk.json
-memory/circuit_breaker_state.json
-memory/kill_switch_state.json
-memory/decision_history.jsonl
-memory/trade_journal/
-memory/chroma_db/
-memory/master_decisions.db
-memory/ml_features.db
-memory/ml_predictions.db
-memory/confidence_manager.db
-memory/model_validation.db
-memory/risk_events.db
-memory/strategy_tracker.db
-memory/ensemble_decisions.db
-
-# ─── Backups ────────────────────────────────────────────────────
-backups/
-
-# ─── Reports / generated outputs ───────────────────────────────
-reports/latest_report.json
-
-# ─── Live data snapshots ────────────────────────────────────────
-data/live/
-
-# ─── Model artifacts ────────────────────────────────────────────
-models/
-*.h5
-*.pkl
-*.joblib
-
-# ─── Cache ──────────────────────────────────────────────────────
-.cache/
-.pytest_cache/
+.env/
+node_modules/
+dist/
+build/
+target/
+.gradle/
 .mypy_cache/
-.ruff_cache/
-htmlcov/
-.coverage
-.coverage.*
+.pytest_cache/
+```

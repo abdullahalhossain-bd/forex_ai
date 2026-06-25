@@ -48,7 +48,7 @@ def _check_absolute_safety(symbol: str) -> tuple[bool, str]:
     is skipped entirely (returns True).
     """
     try:
-        from config import ABSOLUTE_SAFETY
+        from config import ABSOLUTE_SAFETY, TEST_MODE
         if not ABSOLUTE_SAFETY:
             return True, "ABSOLUTE_SAFETY disabled"
     except Exception:

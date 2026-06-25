@@ -1065,6 +1065,9 @@ class AITrader:
         signal = analysis_out.get("signal", {})
         llm = analysis_out.get("llm", {})
         news = analysis_out.get("news", {})
+        
+        # Day 81+ fix: extract fallback price from ind_ctx to ensure entry is never None
+        fallback_price = ind.get("close") or ind.get("price") or 0
 
         return {
             "symbol": self.symbol,
@@ -1091,7 +1094,7 @@ class AITrader:
             "final_action": perm_out["final_action"],
             # Day 81+ hotfix: ensure entry is never None/0 — use dec_out's entry
             # (which has the ind_ctx fallback) if risk_out lost it
-            "entry": risk_out.get("entry") or dec_out.get("entry") or entry,
+            "entry": risk_out.get("entry") or dec_out.get("entry") or fallback_price,
             "sl": risk_out.get("sl_price"),
             "tp": risk_out.get("tp_price"),
             "sl_pips": risk_out.get("sl_pips", 0),
