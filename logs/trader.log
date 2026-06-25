@@ -924,3 +924,34 @@ TypeError: TradeMemory.get_pattern_context() got an unexpected keyword argument 
 2026-06-24 20:33:52 | INFO     | session_analyzer          | [SessionAnalyzer] LONDON_NY_OVERLAP | USDCAD | Strategy: A_PLUS_ONLY | Score: 53 | Trade: ✅
 2026-06-24 20:33:55 | INFO     | macro_data                | [MacroData] DXY=BULLISH Gold=BEARISH VIX=BEARISH SP500=BULLISH
 2026-06-24 20:33:56 | INFO     | ai_trader                 | [System] Stop requested by user
+2026-06-24 16:52:34 | INFO     | data.fetcher              | MetaTrader5 package not installed — DataFetcher will use tvdatafeed as fallback. Install MetaTrader5 on Windows with MetaTrader 5 terminal running to enable MT5 data source.
+2026-06-24 16:52:46 | INFO     | data.fetcher              | MetaTrader5 package not installed — DataFetcher will use tvdatafeed as fallback. Install MetaTrader5 on Windows with MetaTrader 5 terminal running to enable MT5 data source.
+2026-06-24 16:52:46 | WARNING  | master_analyst            | [MasterAnalyst] Gemini key format looks wrong — starts with 'AQ.A', expected 'AIza'. Get a valid key from https://aistudio.google.com/app/apikey (it should be 39 chars, format: AIzaSy...). Current key will return 401 UNAUTHENTICATED.
+2026-06-24 16:52:46 | WARNING  | master_analyst            | [MasterAnalyst] No LLM available (Groq/Gemini keys missing). MasterAnalyst will fall back to rule-engine signal.
+2026-06-24 17:06:57 | WARNING  | trade_memory              | [TradeMemory] sentence-transformers not installed — vector memory disabled.
+  To enable: pip install sentence-transformers
+2026-06-24 17:07:01 | INFO     | data.fetcher              | MetaTrader5 package not installed — DataFetcher will use tvdatafeed as fallback. Install MetaTrader5 on Windows with MetaTrader 5 terminal running to enable MT5 data source.
+2026-06-24 17:07:01 | WARNING  | master_analyst            | [MasterAnalyst] Gemini key format looks wrong — starts with 'AQ.A', expected 'AIza'. Get a valid key from https://aistudio.google.com/app/apikey (it should be 39 chars, format: AIzaSy...). Current key will return 401 UNAUTHENTICATED.
+2026-06-24 17:07:01 | WARNING  | master_analyst            | [MasterAnalyst] No LLM available (Groq/Gemini keys missing). MasterAnalyst will fall back to rule-engine signal.
+2026-06-24 17:07:02 | WARNING  | trade_memory              | [TradeMemory] sentence-transformers not installed — vector memory disabled.
+  To enable: pip install sentence-transformers
+2026-06-24 17:07:16 | INFO     | data.fetcher              | MetaTrader5 package not installed — DataFetcher will use tvdatafeed as fallback. Install MetaTrader5 on Windows with MetaTrader 5 terminal running to enable MT5 data source.
+2026-06-24 17:07:16 | WARNING  | master_analyst            | [MasterAnalyst] Gemini key format looks wrong — starts with 'AQ.A', expected 'AIza'. Get a valid key from https://aistudio.google.com/app/apikey (it should be 39 chars, format: AIzaSy...). Current key will return 401 UNAUTHENTICATED.
+2026-06-24 17:07:16 | WARNING  | master_analyst            | [MasterAnalyst] No LLM available (Groq/Gemini keys missing). MasterAnalyst will fall back to rule-engine signal.
+2026-06-24 17:07:16 | WARNING  | trade_memory              | [TradeMemory] sentence-transformers not installed — vector memory disabled.
+  To enable: pip install sentence-transformers
+2026-06-24 17:14:13 | INFO     | data.fetcher              | MetaTrader5 package not installed — DataFetcher will use tvdatafeed as fallback. Install MetaTrader5 on Windows with MetaTrader 5 terminal running to enable MT5 data source.
+2026-06-24 17:14:13 | WARNING  | master_analyst            | [MasterAnalyst] Gemini key format looks wrong — starts with 'AQ.A', expected 'AIza'. Get a valid key from https://aistudio.google.com/app/apikey (it should be 39 chars, format: AIzaSy...). Current key will return 401 UNAUTHENTICATED.
+2026-06-24 17:14:13 | WARNING  | master_analyst            | [MasterAnalyst] No LLM available (Groq/Gemini keys missing). MasterAnalyst will fall back to rule-engine signal.
+2026-06-24 17:14:22 | INFO     | data.fetcher              | MetaTrader5 package not installed — DataFetcher will use tvdatafeed as fallback. Install MetaTrader5 on Windows with MetaTrader 5 terminal running to enable MT5 data source.
+2026-06-24 17:14:22 | WARNING  | master_analyst            | [MasterAnalyst] Gemini key format looks wrong — starts with 'AQ.A', expected 'AIza'. Get a valid key from https://aistudio.google.com/app/apikey (it should be 39 chars, format: AIzaSy...). Current key will return 401 UNAUTHENTICATED.
+2026-06-24 17:14:22 | WARNING  | master_analyst            | [MasterAnalyst] No LLM available (Groq/Gemini keys missing). MasterAnalyst will fall back to rule-engine signal.
+2026-06-24 17:15:35 | INFO     | data.fetcher              | MetaTrader5 package not installed — DataFetcher will use tvdatafeed as fallback. Install MetaTrader5 on Windows with MetaTrader 5 terminal running to enable MT5 data source.
+2026-06-24 17:15:36 | WARNING  | master_analyst            | [MasterAnalyst] Gemini key format looks wrong — starts with 'AQ.A', expected 'AIza'. Get a valid key from https://aistudio.google.com/app/apikey (it should be 39 chars, format: AIzaSy...). Current key will return 401 UNAUTHENTICATED.
+2026-06-24 17:15:36 | WARNING  | master_analyst            | [MasterAnalyst] No LLM available (Groq/Gemini keys missing). MasterAnalyst will fall back to rule-engine signal.
+2026-06-24 17:15:36 | WARNING  | trade_memory              | [TradeMemory] sentence-transformers not installed — vector memory disabled.
+  To enable: pip install sentence-transformers
+2026-06-25 05:29:03 | INFO     | data.fetcher              | MetaTrader5 package not installed — DataFetcher will use tvdatafeed as fallback. Install MetaTrader5 on Windows with MetaTrader 5 terminal running to enable MT5 data source.
+2026-06-25 05:29:16 | INFO     | data.fetcher              | MetaTrader5 package not installed — DataFetcher will use tvdatafeed as fallback. Install MetaTrader5 on Windows with MetaTrader 5 terminal running to enable MT5 data source.
+2026-06-25 05:29:16 | WARNING  | master_analyst            | [MasterAnalyst] Gemini key format looks wrong — starts with 'AQ.A', expected 'AIza'. Get a valid key from https://aistudio.google.com/app/apikey (it should be 39 chars, format: AIzaSy...). Current key will return 401 UNAUTHENTICATED.
+2026-06-25 05:29:16 | WARNING  | master_analyst            | [MasterAnalyst] No LLM available (Groq/Gemini keys missing). MasterAnalyst will fall back to rule-engine signal.

@@ -370,9 +370,8 @@ class AnalysisAgent:
 
         # Day 81+ AGGRESSIVE TEST_MODE: If TEST_MODE is true and the rule engine
         # has a tradeable signal (BUY/SELL/STRONG_BUY/STRONG_SELL with conf >= 30),
-        # USE IT DIRECTLY. Skip all the MasterAnalyst/news/session/conflict gates
-        # that were blocking trades. This is the "just trade something" mode for
-        # verifying MT5 execution end-to-end.
+        # USE IT DIRECTLY. Skip ALL gates - MasterAnalyst/news/session/conflict.
+        # This is the "just trade something" mode for verifying MT5 execution.
         _test_mode = False
         try:
             from config import TEST_MODE
@@ -393,8 +392,52 @@ class AnalysisAgent:
             log.info(
                 f"[AnalysisAgent] -> {final_signal} "
                 f"(TEST_MODE AGGRESSIVE: Rule={rule_sig_raw} {rule_conf}% — "
-                f"bypassing MasterAnalyst/news/session gates)"
+                f"BYPASSING all gates for MT5 verification)"
             )
+            # Skip ALL remaining gates - go straight to return
+            # Build minimal context needed downstream
+            return {
+                "df":                df,
+                "pat_ctx":           pat_ctx,
+                "advanced_patterns": adv_patterns,
+                "advanced_pat_ctx":  advanced_pat_ctx,
+                "sr_result":         sr_res,
+                "sr_ctx":            sr_ctx,
+                "fib_result":        fib_result,
+                "fib_ctx":           fib_ctx,
+                "bias_result":       bias_result,
+                "bias_ctx":          bias_ctx,
+                "signal":            signal_result,
+                "signal_ctx":        signal_ctx,
+                "llm":               llm_result,
+                "llm_ctx":           llm_ctx,
+                "news":              news_result,
+                "news_ctx":          news_ctx,
+                "sentiment":         sentiment_result,
+                "sentiment_ctx":     sentiment_ctx,
+                "conflict":          conflict_result,
+                "smc":               smc_result,
+                "smc_ctx":           smc_ctx,
+                "vision":            vision_result,
+                "vision_ctx":        vision_ctx,
+                "vision_fusion":     fusion_result,
+                "session":           session_result,
+                "session_ctx":       session_ctx,
+                "intermarket":       intermarket_result,
+                "intermarket_ctx":   intermarket_ctx,
+                "macro_fusion":      macro_fusion,
+                "master":            master_result,
+                "master_ctx":        master_ctx,
+                "news_intelligence": news_intel_ctx,
+                "confluence":        confluence_ctx,
+                "feature_vector":    feature_vector_ctx,
+                "ml_prediction":     ml_prediction_ctx,
+                "ensemble":          ensemble_ctx,
+                "rl_agent":          rl_ctx,
+                "master_decision":   master_decision_ctx,
+                "final_signal":      final_signal,
+                "test_mode_bypass":  True,  # Flag for downstream debugging
+            }
 
         # Day 63: Session dead zone / strategy gate
         elif not session_result["trade_allowed"]:

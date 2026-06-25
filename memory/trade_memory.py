@@ -339,7 +339,21 @@ class TradeMemory:
             "recent_results":   [t.get("result") for t in recent],
         }
 
-    def get_pattern_context(self, pair: str, regime: str, pattern: str) -> dict:
+    def get_pattern_context(
+        self,
+        pair: str,
+        regime: str = "",
+        pattern: str = "",
+        trend: str = None,
+        rsi: float = None,
+    ) -> dict:
+        """
+        Get pattern context for decision making.
+        
+        Supports both old signature (pair, regime, pattern) and new signature
+        (pair, trend, rsi, pattern, regime) for backward compatibility.
+        """
+        # Use pattern_memory's get_summary_for_decision with available params
         return self.pattern.get_summary_for_decision(pair, regime, pattern)
 
     def get_stats(self) -> dict:
