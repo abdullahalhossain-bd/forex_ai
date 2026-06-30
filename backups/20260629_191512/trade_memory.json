@@ -1,0 +1,66 @@
+[
+  {
+    "id": 1,
+    "timestamp": "2026-06-29T19:07:06.916793",
+    "symbol": "EURUSD",
+    "timeframe": "15m",
+    "decision": "NO TRADE",
+    "confidence": 0,
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "TRENDING",
+    "trend": "STRONG_UP",
+    "rsi": 61.2,
+    "patterns": [
+      "bullish_pin_bar",
+      "three_bar_continuation_bearish",
+      "doji"
+    ],
+    "rule_signal": "SELL",
+    "llm_signal": "SELL",
+    "reasons": [
+      "Sentiment conflict: Technical SELL vs Sentiment STRONG_BULLISH",
+      "WAIT \u2014 Strong sentiment opposes technical. High conflict risk."
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  },
+  {
+    "id": 2,
+    "timestamp": "2026-06-29T19:13:22.212889",
+    "symbol": "GBPUSD",
+    "timeframe": "15m",
+    "decision": "SELL",
+    "confidence": 42,
+    "entry": 1.32571,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "TRENDING",
+    "trend": "STRONG_UP",
+    "rsi": 65.4,
+    "patterns": [
+      "bullish_pin_bar",
+      "three_bar_reversal_bearish"
+    ],
+    "rule_signal": "STRONG_SELL",
+    "llm_signal": "SELL",
+    "reasons": [
+      "MasterAnalyst: WAIT | New York session with high volatility and a trend continuation bias. Macro regim",
+      "Rule: STRONG_SELL (83%) | LLM: SELL (80%)",
+      "Sentiment: STRONG_BULLISH (score +57, adj -10%)",
+      "Risk: approved | Lot 0",
+      "Risks: Potential reversal if macro risk-on momentum accelerates and price breaks above the H4 order block., Liquidity sweep could trigger a sharp move against the current price level.",
+      "Critique: The macro BUY bias and strong price action suggest upside potential, but the lac",
+      "\ud83c\udfaf Day53 Confidence: \u26a0\ufe0f Small sample (0/3) \u2014 Bayesian penalty -8 (49% \u2192 42%)"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  }
+]

@@ -1,0 +1,35 @@
+[
+  {
+    "id": 1,
+    "timestamp": "2026-06-27T08:39:44.420477",
+    "symbol": "EURUSD",
+    "timeframe": "15m",
+    "decision": "BUY",
+    "confidence": 34,
+    "entry": 1.13835,
+    "sl": null,
+    "tp": null,
+    "lot": 0,
+    "rr": 0,
+    "regime": "TRENDING",
+    "trend": "STRONG_DOWN",
+    "rsi": 39.3,
+    "patterns": [
+      "morning_star"
+    ],
+    "rule_signal": "STRONG_BUY",
+    "llm_signal": "BUY",
+    "reasons": [
+      "MasterAnalyst: WAIT | The current session is LONDON with high volatility, and the session strategy is ",
+      "Rule: STRONG_BUY (90%) | LLM: BUY (85%)",
+      "Sentiment: STRONG_BULLISH (score +51, adj +8%)",
+      "Risk: approved | Lot 0",
+      "Risks: High-risk environment, Neutral macro regime",
+      "Critique: The analysis may be overly cautious, and the wait signal may result in missed op",
+      "\ud83c\udfaf Day53 Confidence: \u26a0\ufe0f Small sample (0/5) \u2014 Bayesian penalty -20 | \u2705 Regime favorable (70%) (64% \u2192 34%)"
+    ],
+    "outcome": null,
+    "pnl_pips": null,
+    "result": null
+  }
+]

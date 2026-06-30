@@ -1,0 +1,54 @@
+[
+  {
+    "time": "2026-06-27T01:06:34",
+    "pair": "EURUSD",
+    "timeframe": "15m",
+    "price": 1.13861,
+    "trend": "STRONG_DOWN",
+    "rsi": 38.1,
+    "bias": "SELL",
+    "confidence": 100,
+    "recommendation": "\ud83d\udd34 SELL BIAS \u2014 Moderate setup. Confirm on lower TF.",
+    "has_conflict": false,
+    "result": null
+  },
+  {
+    "time": "2026-06-27T01:07:28",
+    "pair": "GBPUSD",
+    "timeframe": "15m",
+    "price": 1.31988,
+    "trend": "DOWN",
+    "rsi": 39.6,
+    "bias": "SELL",
+    "confidence": 75,
+    "recommendation": "\ud83d\udd34 SELL BIAS \u2014 Moderate setup. Confirm on lower TF.",
+    "has_conflict": false,
+    "result": null
+  },
+  {
+    "time": "2026-06-27T01:08:23",
+    "pair": "USDJPY",
+    "timeframe": "15m",
+    "price": 161.727,
+    "trend": "STRONG_UP",
+    "rsi": 54.9,
+    "bias": "BUY",
+    "confidence": 67,
+    "recommendation": "\ud83d\udfe2 BUY BIAS \u2014 Moderate setup. Confirm on lower TF.",
+    "has_conflict": false,
+    "result": null
+  },
+  {
+    "time": "2026-06-27T01:09:17",
+    "pair": "AUDUSD",
+    "timeframe": "15m",
+    "price": 0.68953,
+    "trend": "DOWN",
+    "rsi": 40.2,
+    "bias": "STRONG_SELL",
+    "confidence": 100,
+    "recommendation": "\ud83d\udd34 STRONG SELL \u2014 High confidence. Look for entry.",
+    "has_conflict": false,
+    "result": null
+  }
+]

@@ -1,0 +1,28 @@
+[
+  {
+    "time": "2026-06-30T01:07:07",
+    "pair": "EURUSD",
+    "timeframe": "15m",
+    "price": 1.14258,
+    "trend": "STRONG_UP",
+    "rsi": 61.2,
+    "bias": "NEUTRAL",
+    "confidence": 50,
+    "recommendation": "\ud83d\udfe1 NEUTRAL \u2014 No clear edge. Stay out.",
+    "has_conflict": false,
+    "result": null
+  },
+  {
+    "time": "2026-06-30T01:13:22",
+    "pair": "GBPUSD",
+    "timeframe": "15m",
+    "price": 1.32571,
+    "trend": "STRONG_UP",
+    "rsi": 65.4,
+    "bias": "SELL",
+    "confidence": 75,
+    "recommendation": "\ud83d\udd34 SELL BIAS \u2014 Moderate setup. Confirm on lower TF.",
+    "has_conflict": false,
+    "result": null
+  }
+]

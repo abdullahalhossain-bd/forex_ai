@@ -1,0 +1,15 @@
+[
+  {
+    "time": "2026-06-27T14:39:44",
+    "pair": "EURUSD",
+    "timeframe": "15m",
+    "price": 1.13835,
+    "trend": "STRONG_DOWN",
+    "rsi": 39.3,
+    "bias": "BUY",
+    "confidence": 75,
+    "recommendation": "\ud83d\udfe2 BUY BIAS \u2014 Moderate setup. Confirm on lower TF.",
+    "has_conflict": false,
+    "result": null
+  }
+]

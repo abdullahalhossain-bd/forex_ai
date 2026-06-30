@@ -1,0 +1,66 @@
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+database/*.db
+
+# Logs
+logs/
+*.log
+
+# Memory & State (runtime generated)
+memory/trade_vectors/
+memory/*.npy
+memory/pattern_stats.json
+memory/confidence_history.json
+memory/disabled_patterns.json
+memory/pending_approvals.json
+memory/approval_mode.json
+memory/news_history.json
+memory/daily_reviews/
+
+# Backups (runtime generated)
+backups/
+
+# Reports (runtime generated)
+reports/
+
+# Charts & Data output
+data/chart.html
+data/*.csv
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/

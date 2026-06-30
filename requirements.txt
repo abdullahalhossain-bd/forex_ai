@@ -1,0 +1,55 @@
+# requirements.txt — Autonomous AI Forex Trading System (Day 97)
+# ============================================================
+# Install:  pip install -r requirements.txt
+# ============================================================
+
+# ── CORE (required — system will not start without these) ──
+pandas>=1.5.0
+numpy>=1.23.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+psutil>=5.9.0
+
+# ── TECHNICAL INDICATORS ──
+ta>=0.11.0                    # legacy indicator library (data/indicators.py)
+pandas-ta>=0.3.14b            # extended 72-indicator library (data/indicators_ext.py)
+
+# ── MARKET DATA (fallback when MT5 unavailable) ──
+yfinance>=0.2.31              # Yahoo Finance free forex data
+
+# ── WEB SCRAPING (Forex Factory calendar + Myfxbook sentiment) ──
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+cloudscraper>=1.2.71          # bypasses Cloudflare bot-detection on FF
+
+# ── LLM PROVIDERS ──
+groq>=0.9.0                   # Groq (primary LLM)
+google-generativeai>=0.5.0    # Gemini (fallback LLM)
+# Cerebras / SambaNova / OpenRouter use OpenAI-compatible REST (no package needed)
+
+# ── TELEGRAM ──
+python-telegram-bot>=20.7
+
+# ── VISUALIZATION ──
+plotly>=5.18.0
+
+# ── TESTING ──
+pytest>=7.4.0
+
+# ============================================================
+# OPTIONAL (uncomment to enable)
+# ============================================================
+
+# ── MT5 Broker (Windows only — install on Windows with MT5 terminal) ──
+# MetaTrader5>=5.0.4500
+
+# ── Vector Memory (pattern-based learning) ──
+# chromadb>=0.4.22
+# sentence-transformers>=2.2.0
+
+# ── Web Dashboard ──
+# streamlit>=1.30.0
+
+# ── ML / Retraining ──
+# scikit-learn>=1.3.0
+# schedule>=1.2.0
