@@ -64,11 +64,17 @@ PIP_VALUE_USD: dict[str, float] = {
 
 # ── Correlation Groups ──────────────────────────────────────
 CORRELATION_GROUPS: list[list[str]] = [
-    ["EURUSD", "AUDUSD", "NZDUSD"],         # USD-quoted (EUR side)
-    ["GBPUSD"],                              # GBP — আলাদা রাখা হয়েছে
-    ["USDJPY", "GBPJPY", "EURJPY", "AUDJPY"],  # JPY crosses
-    ["USDCAD", "USDCHF"],                    # Commodity/safe-haven
-    ["EURGBP"],                              # European cross
+    # Day 96 bugfix: GBPUSD was previously in its own single-pair group,
+    # which meant EURUSD BUY + GBPUSD BUY both passed the correlation
+    # filter even though both are the SAME underlying bet (USD weakness).
+    # GBPUSD is highly positively correlated with EURUSD/AUDUSD/NZDUSD
+    # (all "long the other currency, short USD" when bought) — it now
+    # shares this group so the filter actually blocks the duplicate-risk
+    # case shown in production logs (EURUSD BUY + GBPUSD BUY same session).
+    ["EURUSD", "GBPUSD", "AUDUSD", "NZDUSD"],   # USD-quoted (long foreign / short USD)
+    ["USDJPY", "GBPJPY", "EURJPY", "AUDJPY"],   # JPY crosses
+    ["USDCAD", "USDCHF"],                        # Commodity/safe-haven (long USD side)
+    ["EURGBP"],                                  # European cross
 ]
 
 # ── Trading Sessions ────────────────────────────────────────

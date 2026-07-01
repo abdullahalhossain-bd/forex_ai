@@ -28,9 +28,11 @@ class TradePermission:
         5. Confluence enough?
     """
 
-    # Production threshold is 60. In TEST_MODE we lower it to 10 so any
-    # LLM/rule signal the AI emits actually flows through to MT5.
-    MIN_CONFIDENCE_PROD  = 40
+    # Day 96 bugfix: comment said 60 but the constant was left at 40 —
+    # the gate was never actually enforcing the documented production
+    # threshold, which is how single-indicator 42%-confidence trades
+    # (e.g. lone RSI oversold) kept reaching MT5.
+    MIN_CONFIDENCE_PROD  = 60
     MIN_CONFIDENCE_TEST  = 10
 
     @property

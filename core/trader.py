@@ -688,16 +688,7 @@ class AITrader:
         #        If PaperTrader.get_open_positions() raises, we log + fall
         #        back to an empty list (no open positions = no correlation
         #        blocks), which is safer than silently using stale state.
-        try:
-            _live_open = [t.get("pair") for t in self._paper.get_open_positions() if t.get("pair")]
-        except Exception as e:
-            # Day 90 bugfix: log at WARNING (not debug) — this should never
-            # happen in normal operation, and if it does we need to know.
-            log.warning(
-                f"[Risk] PaperTrader.get_open_positions() raised: {e} — "
-                f"using empty open-pairs list (correlation check will pass)"
-            )
-            _live_open = []
+        _live_open = self._get_live_open_pairs()
 
         if hasattr(self._risk, "sync_open_positions"):
             try:
@@ -909,6 +900,13 @@ class AITrader:
                 )
             if trade:
                 result["paper_trade_id"] = trade.get("id")
+                # Day 96 bugfix: the ExecutionRouter returns "ticket" in its
+                # response dict for every successful fill (paper, simulated,
+                # or real MT5), but this value was never copied onto `result`
+                # — so result.get("ticket") was always None downstream,
+                # which is why trade_decisions.jsonl showed "ticket: null"
+                # for every trade including ones that filled successfully.
+                result["ticket"] = trade.get("ticket")
                 result["paper_balance"] = self._paper.balance
                 self._risk.record_trade_open(self.symbol)
                 self._notify_trade_open(trade, result, dec_out)
@@ -1122,8 +1120,52 @@ class AITrader:
     def get_memory_stats(self):
         self._memory.print_stats()
 
+    def _get_live_open_pairs(self) -> list:
+        """
+        Day 96 bugfix: this previously ALWAYS read PaperTrader's in-memory
+        store, even in EXECUTION_MODE=mt5_demo. PaperTrader never receives
+        real MT5 fills, so it stayed empty while real positions piled up
+        on the broker — the correlation filter saw "0 open positions" and
+        waved every new trade through (root cause of EURUSD+GBPUSD both
+        filling as if uncorrelated, since the filter never saw either as
+        "open"). When live on MT5, read positions from the broker itself
+        (filtered by our magic number); only fall back to PaperTrader in
+        paper/simulation mode, or if the MT5 call fails for any reason.
+        """
+        try:
+            _sim_mode = bool(getattr(self._router, "_simulation_mode", False))
+            if self.execution_mode == "mt5_demo" and not _sim_mode:
+                import MetaTrader5 as mt5
+                from core.constants import MT5_MAGIC_NUMBER
+                positions = mt5.positions_get()
+                if positions is not None:
+                    return [
+                        p.symbol for p in positions
+                        if getattr(p, "magic", MT5_MAGIC_NUMBER) == MT5_MAGIC_NUMBER
+                    ]
+                log.warning(
+                    "[Risk] mt5.positions_get() returned None — "
+                    "falling back to PaperTrader for correlation check"
+                )
+        except Exception as e:
+            log.warning(
+                f"[Risk] MT5 positions_get failed: {e} — "
+                f"falling back to PaperTrader for correlation check"
+            )
+
+        try:
+            return [t.get("pair") for t in self._paper.get_open_positions() if t.get("pair")]
+        except Exception as e:
+            # Day 90 bugfix: log at WARNING (not debug) — this should never
+            # happen in normal operation, and if it does we need to know.
+            log.warning(
+                f"[Risk] PaperTrader.get_open_positions() raised: {e} — "
+                f"using empty open-pairs list (correlation check will pass)"
+            )
+            return []
+
     def sync_risk_with_open_positions(self) -> None:
-        open_pairs = [trade.get("pair") for trade in self._paper.get_open_positions()]
+        open_pairs = self._get_live_open_pairs()
         self._risk.sync_open_positions(open_pairs)
 
     def _process_closed_trades(self, closed_now: list[dict]) -> list[dict]:
@@ -1820,9 +1862,12 @@ class AutonomousTraderSystem:
             )
 
     def _sync_risk_state(self) -> None:
+        # Day 96 bugfix: was reading trader._paper directly (always empty
+        # in mt5_demo mode) — now reuses AITrader._get_live_open_pairs(),
+        # which reads real MT5 positions when execution_mode=mt5_demo.
         open_pairs = []
         for trader in self.traders.values():
-            open_pairs.extend([trade.get("pair") for trade in trader._paper.get_open_positions()])
+            open_pairs.extend(trader._get_live_open_pairs())
         for trader in self.traders.values():
             trader._risk.sync_open_positions(open_pairs)
 

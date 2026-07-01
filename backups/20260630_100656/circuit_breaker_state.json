@@ -1,0 +1,13 @@
+{
+  "mode": "COOLDOWN",
+  "consecutive_losses": 3,
+  "daily_loss_usd": 8.52,
+  "date": "2026-06-30",
+  "recent_results": [
+    "LOSS",
+    "LOSS",
+    "LOSS"
+  ],
+  "pause_reason": "\ud83d\uded1 3 consecutive losses \u2014 entering cooldown",
+  "cooldown_until": "2026-06-30T12:59:30.776324"
+}

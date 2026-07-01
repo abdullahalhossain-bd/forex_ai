@@ -264,10 +264,14 @@ class SignalEngine:
             if warnings:
                 confidence = max(0, confidence - 10 * len(warnings))
 
-            if net >= 4:    signal = 'STRONG_BUY'
-            elif net >= 2:  signal = 'BUY'
-            elif net <= -4: signal = 'STRONG_SELL'
-            elif net <= -2: signal = 'SELL'
+            # Day 96 bugfix: net>=2 let a single oversold/overbought RSI
+            # reading (weight +2) trigger BUY/SELL on its own, with no
+            # second confirming factor. Raised to 3 so at least two
+            # agreeing signals (or one strong + one weak) are required.
+            if net >= 5:    signal = 'STRONG_BUY'
+            elif net >= 3:  signal = 'BUY'
+            elif net <= -5: signal = 'STRONG_SELL'
+            elif net <= -3: signal = 'SELL'
             else:           signal = 'WAIT'
 
         # Regime filter

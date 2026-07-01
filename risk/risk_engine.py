@@ -6,7 +6,7 @@
 # ============================================================
 
 from utils.logger import get_logger
-from core.constants import PIP_SIZE, CORRELATION_GROUPS, get_pip_size, get_pip_value_usd, clean_symbol
+from core.constants import PIP_SIZE, CORRELATION_GROUPS, get_pip_size, get_pip_value_usd, clean_symbol, pips_to_price
 import json, os
 from datetime import datetime, date, timezone
 
@@ -106,6 +106,21 @@ class RiskEngine:
             atr = 0.0010
 
         sl_distance = round(atr * vol_mult, 5)
+
+        # Day 96 bugfix: in LOW_VOLATILITY regime (vol_mult=1.0) ATR can be
+        # as low as 6-7 pips on majors during Sydney/Tokyo sessions, giving
+        # an SL of just 6-7 pips — easily hit by spread + normal noise
+        # before any real move develops (this matched the production
+        # journal: EURUSD 6.6 pip SL, GBPUSD 6.4 pip SL, both stopped out).
+        # Enforce a hard floor of 10 pips regardless of regime/ATR.
+        min_sl_distance = pips_to_price(self.symbol, 10)
+        if sl_distance < min_sl_distance:
+            log.info(
+                f"[RiskEngine] sl_distance={sl_distance} below 10-pip floor "
+                f"({min_sl_distance}) — flooring to avoid noise stop-out"
+            )
+            sl_distance = round(min_sl_distance, 5)
+
         sl_pips     = round(sl_distance / self.pip) if self.pip > 0 else 10
 
         if signal == "BUY":

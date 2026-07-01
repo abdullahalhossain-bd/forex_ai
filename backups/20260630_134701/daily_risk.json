@@ -1,0 +1,21 @@
+{
+  "date": "2026-06-30",
+  "total_loss_usd": 8.52,
+  "total_win_usd": 0,
+  "open_trades": 1,
+  "open_pairs": [
+    "XAUUSD"
+  ],
+  "trades": [
+    {
+      "symbol": "GBPUSD",
+      "pnl_usd": -4.3,
+      "time": "2026-06-30T08:59:28.994956+00:00"
+    },
+    {
+      "symbol": "GBPUSD",
+      "pnl_usd": -4.22,
+      "time": "2026-06-30T08:59:29.963951+00:00"
+    }
+  ]
+}
