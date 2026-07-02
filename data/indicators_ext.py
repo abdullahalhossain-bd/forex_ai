@@ -122,6 +122,7 @@ class ExtendedIndicators:
         df = self.add_momentum(df)
         df = self.add_volatility(df)
         df = self.add_volume_indicators(df)
+        df = self.add_volume_rsi(df)       # Day 97+ Book Page 49-50
         df = self.add_trend_strength(df)
         df = self.add_ichimoku(df)
         df = self.add_pivots(df)
@@ -411,6 +412,56 @@ class ExtendedIndicators:
             _safe_set(df, "cci", ta.cci(high, low, close, length=20))
         except Exception as e:
             log.debug(f"[IndicatorsExt] CCI failed: {e}")
+
+        return df
+
+    # ─────────────────────────────────────────────────────────
+    # VOLUME RSI (Book Page 49-50)
+    # ─────────────────────────────────────────────────────────
+
+    def add_volume_rsi(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+        """Day 97+ Book Rule (Page 49-50): Volume RSI.
+
+        Like RSI but uses volume instead of price:
+          - Up-day volume = volume on days where close > prev close
+          - Down-day volume = volume on days where close < prev close
+          - Volume RS = sum(up_vol) / sum(down_vol)
+          - Volume RSI = 100 - (100 / (1 + Volume RS))
+
+        Signal (Page 50):
+          - Crosses above 50% → bullish (buy)
+          - Crosses below 50% → bearish (sell)
+        """
+        if "volume" not in df.columns or "close" not in df.columns:
+            return df
+        if len(df) < period + 1:
+            return df
+
+        try:
+            close = pd.to_numeric(df["close"], errors="coerce").fillna(0)
+            vol = pd.to_numeric(df["volume"], errors="coerce").fillna(0)
+
+            # Calculate up-volume and down-volume
+            price_change = close.diff()
+            up_vol = vol.where(price_change > 0, 0.0)
+            down_vol = vol.where(price_change < 0, 0.0)
+
+            # Rolling sums
+            up_sum = up_vol.rolling(window=period, min_periods=period).sum()
+            down_sum = down_vol.rolling(window=period, min_periods=period).sum()
+
+            # Volume RS and RSI
+            vol_rs = up_sum / down_sum.replace(0, 1e-10)  # avoid div by zero
+            df["vol_rsi"] = (100 - (100 / (1 + vol_rs))).fillna(50)
+
+            # 50% crossover signal (Page 50)
+            df["vol_rsi_signal"] = df["vol_rsi"].apply(
+                lambda x: "BUY" if x > 50 else "SELL" if x < 50 else "NEUTRAL"
+            )
+
+            log.debug(f"[IndicatorsExt] Volume RSI added (period={period})")
+        except Exception as e:
+            log.debug(f"[IndicatorsExt] Volume RSI failed: {e}")
 
         return df
 

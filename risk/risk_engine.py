@@ -105,6 +105,17 @@ class RiskEngine:
             log.warning(f"[RiskEngine] atr={atr} (invalid) — using 0.0010")
             atr = 0.0010
 
+        # Day 97+ Book Page 13: per-instrument ATR multiplier
+        symbol_upper = self.symbol.upper().replace("/", "").replace("=X", "")
+        instrument_mult = 1.0
+        if symbol_upper in ("XAUUSD", "XAGUSD"):
+            instrument_mult = 1.5
+        elif symbol_upper.endswith("JPY"):
+            instrument_mult = 1.2
+        elif symbol_upper in ("US30", "NAS100"):
+            instrument_mult = 1.3
+        vol_mult = vol_mult * instrument_mult
+
         sl_distance = round(atr * vol_mult, 5)
 
         # Day 96 bugfix: in LOW_VOLATILITY regime (vol_mult=1.0) ATR can be
@@ -136,6 +147,24 @@ class RiskEngine:
         risk_usd = round(self.balance * self.MAX_RISK_PC / 100, 2)
         pip_val  = get_pip_value_usd(self.symbol)
         lot_raw  = risk_usd / (sl_pips * pip_val) if sl_pips > 0 else 0.01
+
+        # Day 97+ Book Rule (Page 13): Leverage-adjusted position sizing.
+        # Forex is leveraged — "movements can be amplified". Reduce lot
+        # size proportional to leverage to prevent account blow-up.
+        # Most MT5 demo accounts use 1:100 leverage. We scale down lot
+        # when leverage is high (risk_per_trade is already 1%, but the
+        # NOTIONAL exposure can be 100× balance).
+        try:
+            from config import MAX_LOT as _cfg_lot
+            leverage_mult = 1.0  # default: no adjustment
+            # If MAX_LOT is small (0.20), the system is already conservative.
+            # If MAX_LOT is large (10+), apply leverage scaling.
+            if float(_cfg_lot) > 1.0:
+                leverage_mult = 0.5  # halve lot when high leverage allowed
+        except Exception:
+            leverage_mult = 1.0
+        lot_raw = lot_raw * leverage_mult
+
         # Day 81+ hotfix: cap at self.MAX_LOT (0.20 default), not 100.0.
         lot      = round(max(0.01, min(lot_raw, self.MAX_LOT)), 2)
         if lot_raw > self.MAX_LOT:

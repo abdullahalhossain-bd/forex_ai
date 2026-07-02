@@ -111,6 +111,7 @@ class DecisionAgent:
                 sl=master_ctx.get("master_sl") or risk_out.get("sl_price"),
                 tp=master_ctx.get("master_tp1") or risk_out.get("tp_price"),
                 pattern=pattern, pair=pair, timeframe=timeframe, regime=regime_label,
+                analysis_out=analysis_out,
             )
 
         # Gates (only reached in non-TEST_MODE or when final_signal is not BUY/SELL)
@@ -287,6 +288,7 @@ class DecisionAgent:
             entry=entry, sl=sl, tp=tp,
             pattern=pattern, pair=pair, timeframe=timeframe, regime=regime_label,
             confidence_engine_result=confidence_engine_result,
+            analysis_out=analysis_out,
         )
 
     # ──────────────────────────────────────────────────────────
@@ -311,25 +313,65 @@ class DecisionAgent:
     def _result(self, decision, confidence, risk_out, reasons,
                 entry=None, sl=None, tp=None,
                 pattern=None, pair=None, timeframe=None, regime=None,
-                confidence_engine_result=None) -> dict:
+                confidence_engine_result=None,
+                analysis_out=None) -> dict:
+        # Day 97+ FIX: extract aligned_factors + setup_quality from confluence
+        # engine so TradePermission can check them. Previously these fields
+        # were missing from dec_out → trade_permission saw "0 factors, UNKNOWN".
+        aligned_factors = 0
+        setup_quality = "UNKNOWN"
+        if analysis_out:
+            confluence_ctx = analysis_out.get("confluence") if isinstance(analysis_out, dict) else None
+            if confluence_ctx and isinstance(confluence_ctx, dict):
+                aligned_factors = confluence_ctx.get("aligned_factors", 0)
+                setup_quality = confluence_ctx.get("setup_quality", "UNKNOWN")
+
+        # Day 97+ Fallback: if no confluence data, infer from vote count
+        if aligned_factors == 0 and decision in ("BUY", "SELL"):
+            # Count how many agents voted for this direction
+            master_sig = (analysis_out or {}).get("master_ctx", {}).get("master_signal", "WAIT")
+            llm_sig = (analysis_out or {}).get("llm", {}).get("signal", "WAIT")
+            rule_sig = (analysis_out or {}).get("signal", {}).get("signal", "WAIT")
+            votes = 0
+            if master_sig in ("BUY", "SELL"): votes += 1
+            if llm_sig in ("BUY", "SELL"): votes += 1
+            if rule_sig in ("BUY", "SELL"): votes += 1
+            # Day 100+: include Unified Signal Engine consensus as a 4th vote
+            unified_ctx = (analysis_out or {}).get("unified_signal", {})
+            unified_consensus = unified_ctx.get("consensus", {}) if isinstance(unified_ctx, dict) else {}
+            unified_action = unified_consensus.get("action", "NO_TRADE")
+            if unified_action in ("BUY", "SELL"): votes += 1
+            aligned_factors = max(1, votes)  # at least 1 so it doesn't hard-block
+            setup_quality = "B" if votes >= 2 else "UNKNOWN"
+
+        # Day 100+: extract unified signal consensus for downstream consumers
+        unified_ctx_out = (analysis_out or {}).get("unified_signal", {}) if isinstance(analysis_out, dict) else {}
+        unified_consensus_out = unified_ctx_out.get("consensus", {}) if isinstance(unified_ctx_out, dict) else {}
+
         return {
-            "decision":   decision,
-            "confidence": confidence,
-            "entry":      entry or risk_out.get("entry"),
-            "sl":         sl    or risk_out.get("sl_price"),
-            "tp":         tp    or risk_out.get("tp_price"),
-            "sl_pips":    risk_out.get("sl_pips", 0),
-            "tp_pips":    risk_out.get("tp_pips", 0),
-            "lot":        risk_out.get("lot", risk_out.get("lot_size", 0)),
-            "rr":         risk_out.get("rr_ratio", 0),
-            "reasons":    reasons,
-            # Day 53 — needed downstream (LearningAgent / MemoryIntegration)
-            # to call confidence_engine.record_outcome() after trade closes.
-            "pattern":    pattern,
-            "pair":       pair,
-            "timeframe":  timeframe,
-            "regime":     regime,
+            "decision":         decision,
+            "confidence":       confidence,
+            "entry":            entry or risk_out.get("entry"),
+            "sl":               sl    or risk_out.get("sl_price"),
+            "tp":               tp    or risk_out.get("tp_price"),
+            "sl_pips":          risk_out.get("sl_pips", 0),
+            "tp_pips":          risk_out.get("tp_pips", 0),
+            "lot":              risk_out.get("lot", risk_out.get("lot_size", 0)),
+            "rr":               risk_out.get("rr_ratio", 0),
+            "reasons":          reasons,
+            "pattern":          pattern,
+            "pair":             pair,
+            "timeframe":        timeframe,
+            "regime":           regime,
             "confidence_engine": confidence_engine_result,
+            # Day 97+ FIX: these fields are required by TradePermission
+            "aligned_factors":  aligned_factors,
+            "setup_quality":    setup_quality,
+            # Day 100+ — Unified Signal Engine consensus (5-engine voting)
+            "unified_consensus": unified_consensus_out.get("action", "NO_TRADE"),
+            "unified_buy_score": unified_consensus_out.get("buy_score", 0.0),
+            "unified_sell_score": unified_consensus_out.get("sell_score", 0.0),
+            "unified_confidence": unified_consensus_out.get("confidence", "Low"),
         }
 
     def print_summary(self, result: dict) -> None:

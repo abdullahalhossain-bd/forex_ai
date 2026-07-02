@@ -67,9 +67,13 @@ class PositionManager:
     # ── Breakeven ──
     BREAKEVEN_TRIGGER_PC = 0.50  # TP distance-এর কত % profit হলে SL → entry
 
-    # ── Partial Close ──
-    PARTIAL_TRIGGER_PC   = 0.50  # TP distance-এর কত % এ partial close
-    PARTIAL_CLOSE_PC     = 0.50  # কত % position close করবে (50% = half lot)
+    # ── Partial Close (Day 97+ 2-stage) ──
+    PARTIAL_TRIGGER_PC_1  = 0.40  # Stage 1: trigger at 40% of TP
+    PARTIAL_CLOSE_PC_1    = 0.30  # Stage 1: close 30%
+    PARTIAL_TRIGGER_PC_2  = 0.70  # Stage 2: trigger at 70% of TP
+    PARTIAL_CLOSE_PC_2    = 0.30  # Stage 2: close 30% more
+    PARTIAL_TRIGGER_PC   = 0.50  # legacy fallback
+    PARTIAL_CLOSE_PC     = 0.50  # legacy fallback
 
     # ── Time Exit ──
     SESSION_END_HOUR_UTC = 22    # UTC 22:00 এর পর কোনো trade রাখবে না
@@ -419,6 +423,21 @@ class PositionManager:
 
         if self.risk_engine:
             self.risk_engine.record_trade_close(symbol, pnl)
+
+        # Day 97+ Book Page 54: Cost analysis tracking
+        try:
+            from monitoring.cost_analysis import get_cost_tracker
+            ct = get_cost_tracker()
+            ct.record_trade(
+                symbol=symbol,
+                direction=last_known.get("type", "BUY"),
+                lot=float(last_known.get("volume", 0.01)),
+                gross_pnl_usd=float(pnl),
+                slippage_cost_pips=0.0,
+                ticket=ticket,
+            )
+        except Exception:
+            pass
 
         # Cleanup sets
         self._breakeven_done.discard(ticket)

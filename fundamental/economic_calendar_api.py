@@ -200,60 +200,41 @@ class EconomicCalendarAPI:
         FairEconomy JSON feed — ForexFactory এর official data, no key needed.
         URL: https://nfs.faireconomy.media/ff_calendar_thisweek.json
 
-        Response format:
-        [
-          {
-            "title":   "Non-Farm Employment Change",
-            "country": "USD",
-            "date":    "2026-06-27T12:30:00-04:00",
-            "impact":  "High",
-            ...
-          }
-        ]
+        Day 97+ CRITICAL FIX: previously this method called requests.get()
+        DIRECTLY — bypassing the shared faireconomy_cache.py module. This meant:
+          1. NO caching (every call hit the API)
+          2. NO stampede protection (multiple threads → multiple requests)
+          3. news_filter.py ALSO called the same API via the cache module
+        → 2+ HTTP requests per cycle → 429 Too Many Requests
+
+        Now delegates to the shared cached fetch_faireconomy() function.
         """
         try:
-            resp = requests.get(FAIRECONOMY_URL, timeout=10)
-            resp.raise_for_status()
-            data = resp.json()
+            # Day 97+ FIX: use the shared cached fetcher instead of direct API call
+            from fundamental.faireconomy_cache import fetch_faireconomy as _cached_fetch
 
+            raw_events = _cached_fetch(
+                watched_currencies=set(currencies),
+                high_impact_keywords=HIGH_IMPACT_KEYWORDS,
+            )
+
+            if not raw_events:
+                return None
+
+            # Convert from cache format to our format (cache returns simplified dicts)
             events = []
-            for item in data:
-                currency = item.get("country", "").upper()
-                if currency not in currencies:
-                    continue
-
-                impact  = item.get("impact", "").lower()
-                is_high = impact == "high"
-                title   = item.get("title", "")
-
-                # keyword fallback যদি impact field missing/wrong হয়
-                if not is_high:
-                    is_high = any(
-                        kw.lower() in title.lower()
-                        for kw in HIGH_IMPACT_KEYWORDS
-                    )
-
-                # Parse datetime — format: "2026-06-27T12:30:00-04:00"
-                date_str = item.get("date", "")
-                try:
-                    dt = datetime.fromisoformat(date_str)
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
-                    utc_dt = dt.astimezone(timezone.utc)
-                except Exception:
-                    continue
-
+            for item in raw_events:
                 events.append({
-                    "title":    title,
-                    "currency": currency,
-                    "time":     utc_dt,
-                    "impact":   "HIGH" if is_high else IMPACT_MAP.get(impact, "LOW"),
-                    "forecast": str(item.get("forecast", "") or ""),
-                    "previous": str(item.get("previous", "") or ""),
-                    "actual":   str(item.get("actual", "") or ""),
+                    "title":    item.get("title", ""),
+                    "currency": item.get("currency", ""),
+                    "time":     item.get("time"),
+                    "impact":   "HIGH" if item.get("high_impact") else "MEDIUM",
+                    "forecast": "",
+                    "previous": "",
+                    "actual":   "",
                 })
 
-            log.info(f"[FairEconomy] Fetched {len(events)} events this week")
+            log.info(f"[FairEconomy] Fetched {len(events)} events this week (via shared cache)")
             return events or None
 
         except Exception as e:

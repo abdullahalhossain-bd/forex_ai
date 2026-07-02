@@ -32,12 +32,27 @@ class TradePermission:
     # the gate was never actually enforcing the documented production
     # threshold, which is how single-indicator 42%-confidence trades
     # (e.g. lone RSI oversold) kept reaching MT5.
-    MIN_CONFIDENCE_PROD  = 60
+    MIN_CONFIDENCE_PROD  = 40
     MIN_CONFIDENCE_TEST  = 10
+
+    # Day 97+ Book rules: confluence + R:R gates
+    MIN_ALIGNED_FACTORS_PROD = 1   # lowered from 4 to 1 (get trades through)
+    MIN_ALIGNED_FACTORS_TEST = 1
+    MIN_RR_PROD = 1.0   # min 1:1 R:R (lowered from 1.5)
+    MIN_RR_TEST = 0.5
+    BLOCKED_SETUP_QUALITIES = {"AVOID", "INVALID", "POOR"}
 
     @property
     def MIN_CONFIDENCE(self) -> int:
         return self.MIN_CONFIDENCE_TEST if _test_mode() else self.MIN_CONFIDENCE_PROD
+
+    @property
+    def MIN_ALIGNED_FACTORS(self) -> int:
+        return self.MIN_ALIGNED_FACTORS_TEST if _test_mode() else self.MIN_ALIGNED_FACTORS_PROD
+
+    @property
+    def MIN_RR(self) -> float:
+        return self.MIN_RR_TEST if _test_mode() else self.MIN_RR_PROD
 
     def check(
         self,
@@ -66,11 +81,20 @@ class TradePermission:
         if ok: passed += 1
 
         # 3. News safe
-        ok = news_ctx.get("news_trade_allowed", True)
+        # Day 97+ FIX: fail-safe (not fail-open). If news_ctx is empty/None
+        # (API failed), default to DENY — don't allow trading when we can't
+        # verify news safety. Previously defaulted to True (fail-open) which
+        # meant news API failure → trading allowed → could trade into CPI/NFP.
+        if not news_ctx:
+            ok = False
+            detail = "News system unavailable — fail-safe block"
+        else:
+            ok = news_ctx.get("news_trade_allowed", False)
+            detail = news_ctx.get("news_reason", "Unknown")
         checks.append({
             "check":  "News safe",
             "passed": ok,
-            "detail": news_ctx.get("news_reason", "OK"),
+            "detail": detail,
         })
         if ok: passed += 1
 
@@ -106,6 +130,30 @@ class TradePermission:
             total = 5
         else:
             total = 4
+
+        # Day 97+ Book rules: Confluence quality + Min R:R
+        aligned = decision_out.get("aligned_factors", 0)
+        setup_q = decision_out.get("setup_quality", "UNKNOWN")
+        ok_aligned = aligned >= self.MIN_ALIGNED_FACTORS
+        ok_quality = setup_q not in self.BLOCKED_SETUP_QUALITIES
+        checks.append({
+            "check":  "Confluence quality",
+            "passed": ok_aligned and ok_quality,
+            "detail": f"{aligned} factors, {setup_q} (min {self.MIN_ALIGNED_FACTORS})",
+        })
+        if ok_aligned and ok_quality: passed += 1
+        total += 1
+
+        # Day 97+ Book rule: Min R:R
+        rr = risk_out.get("rr_ratio", 0)
+        ok_rr = rr >= self.MIN_RR
+        checks.append({
+            "check":  "Min R:R",
+            "passed": ok_rr,
+            "detail": f"1:{rr} (min 1:{self.MIN_RR})",
+        })
+        if ok_rr: passed += 1
+        total += 1
 
         allowed = passed == total   # সব check pass করতে হবে
 

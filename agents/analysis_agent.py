@@ -302,6 +302,67 @@ class AnalysisAgent:
         signal_engine.print_summary(signal_result)
         signal_ctx = signal_engine.get_ai_context(signal_result)
 
+        # ── 6b. Day 97+ Book Rules: Trendline, Supply/Demand, Volume Confirm, Oscillator Gate ─
+        trendline_ctx = {}
+        try:
+            from analysis.trendline_engine import TrendlineEngine
+            te = TrendlineEngine()
+            trendline_result = te.analyze(df, pair=symbol)
+            trendline_ctx = {
+                "trendline": trendline_result,
+                "trendline_signals": trendline_result.get("signals", []),
+            }
+        except Exception as e:
+            log.debug(f"[AnalysisAgent] Trendline engine error: {e}")
+
+        supply_demand_ctx = {}
+        try:
+            from analysis.supply_demand_zones import SupplyDemandZones
+            sd = SupplyDemandZones()
+            sd_result = sd.detect(df)
+            supply_demand_ctx = {
+                "supply_demand": sd_result,
+                "nearest_demand": sd_result.get("nearest_demand"),
+                "nearest_supply": sd_result.get("nearest_supply"),
+            }
+        except Exception as e:
+            log.debug(f"[AnalysisAgent] Supply/Demand zones error: {e}")
+
+        volume_confirm_ctx = {}
+        try:
+            from analysis.volume_confirmation import VolumeConfirmation
+            vc = VolumeConfirmation()
+            vc_trend = vc.check_trend_confirmation(df)
+            vc_context = vc.get_volume_context(df)
+            volume_confirm_ctx = {
+                "trend_confirmation": vc_trend,
+                "volume_context": vc_context,
+            }
+        except Exception as e:
+            log.debug(f"[AnalysisAgent] Volume confirmation error: {e}")
+
+        oscillator_gate_ctx = {}
+        try:
+            from analysis.oscillator_regime_gate import OscillatorRegimeGate
+            gate = OscillatorRegimeGate()
+            rsi_val = float(ind_ctx.get("rsi", 50))
+            adx_val = float(ind_ctx.get("adx", 0))
+            gate_result = gate.adjust_signal(
+                signal=signal_result.get("signal", "WAIT"),
+                source="RSI",
+                rsi=rsi_val,
+                adx=adx_val,
+                trend=regime.get("regime", "UNKNOWN"),
+                volatility=regime.get("volatility", "NORMAL"),
+            )
+            rsi_adjusted = gate.get_rsi_signal(rsi_val, regime.get("regime", "UNKNOWN"))
+            oscillator_gate_ctx = {
+                "gate": gate_result,
+                "rsi_adjusted": rsi_adjusted,
+            }
+        except Exception as e:
+            log.debug(f"[AnalysisAgent] Oscillator gate error: {e}")
+
         # ── 7. Sentiment Engine ─────────────────────────────
         sentiment_ctx    = {}
         sentiment_result = {}
@@ -862,6 +923,10 @@ class AnalysisAgent:
                 "bias_ctx":          bias_ctx,
                 "signal":            signal_result,
                 "signal_ctx":        signal_ctx,
+                "trendline_ctx":     trendline_ctx,
+                "supply_demand_ctx": supply_demand_ctx,
+                "volume_confirm_ctx":volume_confirm_ctx,
+                "oscillator_gate_ctx":oscillator_gate_ctx,
                 "llm":               llm_result,
                 "llm_ctx":           llm_ctx,
                 "news":              news_result,
@@ -1502,6 +1567,35 @@ class AnalysisAgent:
             f"Final: {final_signal}"
         )
 
+        # ── Unified Signal Engine (Day 100+) ─────────────────
+        # Runs the spec-compliant 5-engine stack (S/R zones + StopHunt +
+        # ICT/AMD + Multi-Strategy PA + High-Reliability Patterns) and
+        # produces a consensus signal via weighted voting.
+        # This is OPTIONAL — failure does not break the main pipeline.
+        unified_signal_ctx = {}
+        try:
+            from analysis.unified_signal_engine import UnifiedSignalEngine
+            # Normalize timeframe to uppercase format the engine expects
+            tf_norm = timeframe.upper() if timeframe else "4H"
+            # Map common MT5 timeframes to engine's expected format
+            tf_map = {"M15": "1H", "M30": "1H", "H1": "1H", "H4": "4H", "D1": "1D"}
+            tf_for_engine = tf_map.get(tf_norm, "4H")
+
+            unified_engine = UnifiedSignalEngine(timeframe=tf_for_engine)
+            unified_signal_ctx = unified_engine.analyze(
+                df, symbol=symbol, lower_tf_df=None  # lower TF not always available
+            )
+            consensus = unified_signal_ctx.get("consensus", {})
+            log.info(
+                f"[AnalysisAgent] Unified Signal Engine: "
+                f"consensus={consensus.get('action', 'N/A')} "
+                f"(BUY={consensus.get('buy_score', 0)}, SELL={consensus.get('sell_score', 0)}) "
+                f"| patterns={len(unified_signal_ctx.get('detected_patterns', []))}"
+            )
+        except Exception as e:
+            log.warning(f"[AnalysisAgent] Unified Signal Engine failed: {e}")
+            unified_signal_ctx = {"error": str(e), "consensus": {"action": "NO_TRADE"}}
+
         return {
             "df":                df,
             "pat_ctx":           pat_ctx,
@@ -1577,4 +1671,6 @@ class AnalysisAgent:
             "mtf_structure_ctx":  mtf_structure_ctx,
             "strategy":           strategy_choice,
             "final_signal":      final_signal,
+            # Day 100+ — Unified Signal Engine (5-engine consensus)
+            "unified_signal":    unified_signal_ctx,
         }

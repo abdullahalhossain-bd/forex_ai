@@ -71,47 +71,55 @@ OBSOLETE_MODULES: List[ObsoleteEntry] = [
     ),
 
     # ── analysis/ — the Day 61–64 SMC/Liquidity/Currency cluster ─────
+    # UPDATE 2026-07-02: 7 of these modules were DELETED in the duplicate-cleanup pass.
+    # They are kept in this registry as historical record (category=DELETED).
     ObsoleteEntry(
         "analysis/smart_money.py",
         ObsoleteCategory.DEAD,
-        "Day-61 master SMC orchestrator never wired into agents/analysis_agent.py (still uses Day-44 smc_engine).",
-        "Marked legacy. Future: replace smc_engine with smart_money in AnalysisAgent.run().",
+        "Day-61 master SMC orchestrator never wired into agents/analysis_agent.py. Superseded by ict_amd_signal_engine.py + unified_signal_engine.py stack. DELETED 2026-07-02.",
+        "DELETED — superseded by ict_amd_signal_engine.py.",
     ),
     ObsoleteEntry(
         "analysis/structure.py",
-        ObsoleteCategory.DEAD,
-        "Only consumer is dead analysis/smart_money.py.",
-        "Marked legacy (transitively dead).",
+        ObsoleteCategory.SUPERSEDED,
+        "CORRECTED 2026-07-02: NOT dead. Live — imported by agents/analysis_agent.py:41 (MarketStructureEngine) and analysis/structure_mtf.py. Was incorrectly listed as DEAD.",
+        "LIVE module — keep. Used by analysis_agent + structure_mtf.",
     ),
     ObsoleteEntry(
         "analysis/liquidity.py",
         ObsoleteCategory.DEAD,
-        "Class-name collision with analysis/liquidity_engine.py. Only consumer is dead smart_money.py.",
-        "Marked legacy. Rename to liquidity_intel.py if revived.",
+        "Class-name collision with analysis/liquidity_engine.py. Only consumer was dead smart_money.py. DELETED 2026-07-02.",
+        "DELETED — superseded by stop_hunt_signal_engine.py.",
     ),
     ObsoleteEntry(
         "analysis/liquidity_engine.py",
         ObsoleteCategory.DEAD,
-        "Day-62 liquidity orchestrator never wired into AnalysisAgent.",
-        "Marked legacy. Wire via AnalysisAgent when adopting Day-62 pipeline.",
+        "Day-62 liquidity orchestrator never wired into AnalysisAgent. DELETED 2026-07-02.",
+        "DELETED — superseded by unified_signal_engine.py.",
     ),
     ObsoleteEntry(
         "analysis/liquidity_zones.py",
         ObsoleteCategory.DEAD,
-        "Only consumer is dead liquidity_engine.py.",
-        "Marked legacy (transitively dead).",
+        "Only consumer was dead liquidity_engine.py. DELETED 2026-07-02.",
+        "DELETED — superseded by stop_hunt_signal_engine.py.",
     ),
     ObsoleteEntry(
         "analysis/stop_hunt_detector.py",
         ObsoleteCategory.DEAD,
-        "Only consumer is dead liquidity_engine.py.",
-        "Marked legacy (transitively dead).",
+        "Only consumer was dead liquidity_engine.py. DELETED 2026-07-02.",
+        "DELETED — superseded by stop_hunt_signal_engine.py.",
     ),
     ObsoleteEntry(
         "analysis/session_analysis.py",
         ObsoleteCategory.DEAD,
-        "London-manipulation detector; only consumer is dead liquidity_engine.py.",
-        "Marked legacy (transitively dead).",
+        "London-manipulation detector; only consumer was dead liquidity_engine.py. DELETED 2026-07-02.",
+        "DELETED — superseded by session_analyzer.py (live) + ict_amd_signal_engine.py.",
+    ),
+    ObsoleteEntry(
+        "analysis/amd_strategy.py",
+        ObsoleteCategory.DEAD,
+        "Day-36/37 AMD strategy. Superseded by ict_amd_signal_engine.py (stricter spec: 6-step pipeline, 1:6 R:R). DELETED 2026-07-02.",
+        "DELETED — superseded by ict_amd_signal_engine.py.",
     ),
     ObsoleteEntry(
         "analysis/currency_strength.py",

@@ -750,6 +750,51 @@ class AITrader:
             session_ctx=self._session_permission_context(session_ctx),
         )
 
+        # Day 97+ Book Page 15: Signal Persistence Filter
+        # Suppress entries when signal is flip-flopping (unstable)
+        if perm_out["allowed"]:
+            try:
+                from core.signal_persistence import get_signal_persistence_filter
+                spf = get_signal_persistence_filter()
+                final_sig = perm_out.get("final_action", "WAIT")
+                if not spf.is_stable(self.symbol, final_sig):
+                    perm_out["allowed"] = False
+                    perm_out["final_action"] = "NO TRADE"
+                    perm_out["checks"].append({
+                        "check": "Signal persistence",
+                        "passed": False,
+                        "detail": f"Signal flip-flopping (unstable)",
+                    })
+                spf.record(self.symbol, final_sig, dec_out.get("confidence", 0))
+            except Exception:
+                pass
+
+        # Day 97+ Book Page 15: Regime Suppression
+        # Suppress entries in known false-signal regimes
+        if perm_out["allowed"]:
+            try:
+                from core.regime_suppression import get_regime_suppressor
+                rs = get_regime_suppressor()
+                regime_ctx = market_out.get("regime", {})
+                ind_ctx = market_out.get("ind_ctx", {})
+                suppress, reason = rs.should_suppress(
+                    symbol=self.symbol,
+                    regime=regime_ctx,
+                    session=session_ctx,
+                    news_ctx=analysis_out.get("news_ctx", {}),
+                    ind_ctx=ind_ctx,
+                )
+                if suppress:
+                    perm_out["allowed"] = False
+                    perm_out["final_action"] = "NO TRADE"
+                    perm_out["checks"].append({
+                        "check": "Regime suppression",
+                        "passed": False,
+                        "detail": reason,
+                    })
+            except Exception:
+                pass
+
         if self._paper.has_open_position(self.symbol, perm_out.get("final_action")):
             perm_out["allowed"] = False
             perm_out["final_action"] = "NO TRADE"

@@ -69,6 +69,7 @@ class MarketStructureEngine:
             "bos":            bos,
             "choch":          choch,
             "displacement":   displacement,
+            "trend_phase":    self._detect_trend_phase(df, labeled, structure_bias),
             "last_price":     round(float(df["close"].iloc[-1]), 5),
         }
 
@@ -325,6 +326,119 @@ class MarketStructureEngine:
             }
 
         return {"detected": False, "direction": "NONE", "ratio": round(ratio, 2), "note": "No displacement"}
+
+    # ═══════════════════════════════════════════════════════
+    # Day 97+ Candlestick Bible Pages 54-55: Trend Phase Detection
+    # ═══════════════════════════════════════════════════════
+
+    def _detect_trend_phase(self, df: pd.DataFrame, labeled: list, structure_bias: str) -> dict:
+        """Candlestick Bible Pages 54-55: Impulsive vs Retracement phase.
+
+        Book: "Professional traders enter at the START of an impulsive move,
+        not during a retracement."
+
+        This method classifies the current price position:
+          - 'impulsive' — strong trend-direction move in progress (entry late/risky)
+          - 'retracement' — counter-trend pullback (potential entry zone)
+          - 'retracement_ending' — pullback stalling near S/R (entry window OPEN)
+          - 'unknown' — no clear phase
+
+        Book Page 55 failure mode: "entering at the beginning of a retracement
+        (mistaking it for impulsive) gets you trapped."
+        """
+        result = {
+            "phase": "unknown",
+            "entry_window": "closed",
+            "note": "No clear trend phase detected",
+        }
+
+        if structure_bias not in ("BULLISH", "BEARISH") or len(labeled) < 3:
+            return result
+
+        closes = df["close"].values
+        n = len(df)
+
+        # Get recent swing points
+        recent_swings = labeled[-4:]
+        last_swing = recent_swings[-1]
+        prev_swing = recent_swings[-2] if len(recent_swings) >= 2 else None
+
+        # Calculate recent price momentum
+        lookback = min(5, n - 1)
+        recent_change = float(closes[-1] - closes[-lookback])
+        recent_avg_body = float(np.mean(np.abs(np.diff(closes[-lookback:])))) if lookback > 1 else 0
+        last_body = float(abs(closes[-1] - closes[-2])) if n > 1 else 0
+
+        # Check if displacement (impulsive) is happening now
+        displacement = self._detect_displacement(df)
+        is_impulsive_now = displacement.get("detected", False)
+
+        if structure_bias == "BULLISH":
+            if is_impulsive_now and displacement["direction"] == "BULLISH":
+                result.update({
+                    "phase": "impulsive",
+                    "entry_window": "closed",
+                    "note": "Bullish impulsive move in progress — entering late is risky",
+                })
+            elif recent_change < 0:
+                # Price pulling back (counter-trend) → retracement
+                # Check if near a swing low (potential support)
+                near_support = False
+                if prev_swing and prev_swing["kind"] == "low":
+                    near_support = abs(float(closes[-1]) - prev_swing["price"]) < (prev_swing["price"] * 0.002)
+
+                if near_support:
+                    result.update({
+                        "phase": "retracement_ending",
+                        "entry_window": "open",
+                        "note": "Bullish retracement ending near swing-low support — entry window OPEN",
+                    })
+                else:
+                    result.update({
+                        "phase": "retracement",
+                        "entry_window": "wait",
+                        "note": "Bullish retracement in progress — wait for it to end at support",
+                    })
+            else:
+                result.update({
+                    "phase": "impulsive",
+                    "entry_window": "closed",
+                    "note": "Bullish trend continuing — wait for next retracement",
+                })
+
+        elif structure_bias == "BEARISH":
+            if is_impulsive_now and displacement["direction"] == "BEARISH":
+                result.update({
+                    "phase": "impulsive",
+                    "entry_window": "closed",
+                    "note": "Bearish impulsive move in progress — entering late is risky",
+                })
+            elif recent_change > 0:
+                # Price bouncing up (counter-trend) → retracement
+                near_resistance = False
+                if prev_swing and prev_swing["kind"] == "high":
+                    near_resistance = abs(float(closes[-1]) - prev_swing["price"]) < (prev_swing["price"] * 0.002)
+
+                if near_resistance:
+                    result.update({
+                        "phase": "retracement_ending",
+                        "entry_window": "open",
+                        "note": "Bearish retracement ending near swing-high resistance — entry window OPEN",
+                    })
+                else:
+                    result.update({
+                        "phase": "retracement",
+                        "entry_window": "wait",
+                        "note": "Bearish retracement in progress — wait for it to end at resistance",
+                    })
+            else:
+                result.update({
+                    "phase": "impulsive",
+                    "entry_window": "closed",
+                    "note": "Bearish trend continuing — wait for next retracement",
+                })
+
+        return result
 
     # ═══════════════════════════════════════════════════════
     # AI CONTEXT

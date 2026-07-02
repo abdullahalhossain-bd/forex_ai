@@ -87,6 +87,8 @@ class AdvancedPatternDetector:
             self.detect_flag,
             self.detect_wedge,
             self.detect_cup_and_handle,
+            self.detect_rectangle,        # Day 100+ (Page 112-113)
+            self.detect_momentum_screen,  # Day 100+ (Page 120)
         ]
 
         for detect_fn in detectors:
@@ -1138,6 +1140,229 @@ class AdvancedPatternDetector:
             return np.mean(trs) if trs else 0.0001
         except Exception:
             return 0.0001
+
+    # ═════════════════════════════════════════════════════════════
+    # Day 100+ — Book Pages 112-113: RECTANGLE PATTERN
+    # ═════════════════════════════════════════════════════════════
+
+    def detect_rectangle(self, df: pd.DataFrame) -> list[dict]:
+        """
+        Book Page 112-113 — Rectangle Pattern
+        =======================================
+        Price bounces between two parallel horizontal S/R lines.
+        - Longer duration = more significant pattern
+        - Breakout often accompanied by volume surge
+        - Long entry on breakout above resistance
+        - Short entry on breakout below support
+        - Optional: wait for retest/pullback before entry
+
+        Pseudocode (from book):
+          IF price_oscillates_between(support, resistance, min_touches)
+             AND duration > min_bars:
+              Pattern = "Rectangle"
+          IF price breaks_above resistance AND volume_confirmed:
+              Signal = "Long"
+          IF price breaks_below support AND volume_confirmed:
+              Signal = "Short"
+        """
+        results = []
+        if len(df) < 30:
+            return results
+
+        highs  = df['high'].values
+        lows   = df['low'].values
+        closes = df['close'].values
+        vols   = df['volume'].values if 'volume' in df.columns else None
+        n      = len(df)
+
+        # Use recent 40-80 candles
+        window = min(n, 80)
+        h_seg  = highs[-window:]
+        l_seg  = lows[-window:]
+        c_seg  = closes[-window:]
+
+        atr = self._atr_simple(df)
+        if atr <= 0 or np.isnan(atr):
+            return results
+
+        # Check if both highs and lows are approximately horizontal (flat)
+        x = np.arange(len(h_seg))
+        h_slope, h_intercept = np.polyfit(x, h_seg, 1)
+        l_slope, l_intercept = np.polyfit(x, l_seg, 1)
+
+        slope_threshold = atr * 0.02
+        if abs(h_slope) > slope_threshold or abs(l_slope) > slope_threshold:
+            return results
+
+        resistance = float(h_intercept + h_slope * (len(h_seg) - 1))
+        support    = float(l_intercept + l_slope * (len(l_seg) - 1))
+        height     = resistance - support
+
+        if height < atr * 0.5:
+            return results
+
+        res_touches = sum(1 for h in h_seg if abs(h - resistance) < atr * 0.3)
+        sup_touches = sum(1 for l in l_seg if abs(l - support) < atr * 0.3)
+
+        if res_touches < 2 or sup_touches < 2:
+            return results
+
+        curr_price = float(closes[-1])
+        avg_vol    = float(np.mean(vols[-20:])) if vols is not None else 0
+        curr_vol   = float(vols[-1]) if vols is not None else 0
+        vol_surge  = curr_vol > avg_vol * 1.3 if avg_vol > 0 else False
+
+        broke_up   = curr_price > resistance + atr * 0.1
+        broke_down = curr_price < support - atr * 0.1
+
+        if not (broke_up or broke_down):
+            results.append({
+                'pattern':       'RECTANGLE',
+                'direction':     'NEUTRAL',
+                'trade_action':  'NO_TRADE',
+                'confidence':    65,
+                'resistance':    round(resistance, 5),
+                'support':       round(support, 5),
+                'res_touches':   res_touches,
+                'sup_touches':   sup_touches,
+                'entry':         None,
+                'target':        None,
+                'invalidation':  None,
+                'note':          (
+                    f"Rectangle forming [{support:.5f} – {resistance:.5f}] "
+                    f"({res_touches} res touches, {sup_touches} sup touches). "
+                    f"Wait for breakout. NO_TRADE until confirmed."
+                ),
+            })
+        elif broke_up:
+            target = round(resistance + height, 5)
+            inval  = round(resistance - atr * 0.5, 5)
+            conf   = 70 + (10 if vol_surge else 0)
+            results.append({
+                'pattern':       'RECTANGLE_BREAKOUT_UP',
+                'direction':     'BULLISH',
+                'trade_action':  'LONG',
+                'confidence':    min(95, conf),
+                'resistance':    round(resistance, 5),
+                'support':       round(support, 5),
+                'entry':         round(resistance, 5),
+                'target':        target,
+                'invalidation':  inval,
+                'volume_confirmed': bool(vol_surge),
+                'note':          (
+                    f"Rectangle breakout UP at {resistance:.5f}. "
+                    f"LONG entry. Target={target:.5f} "
+                    f"({'volume confirmed' if vol_surge else 'no volume confirm'})"
+                ),
+            })
+        elif broke_down:
+            target = round(support - height, 5)
+            inval  = round(support + atr * 0.5, 5)
+            conf   = 70 + (10 if vol_surge else 0)
+            results.append({
+                'pattern':       'RECTANGLE_BREAKOUT_DOWN',
+                'direction':     'BEARISH',
+                'trade_action':  'SHORT',
+                'confidence':    min(95, conf),
+                'resistance':    round(resistance, 5),
+                'support':       round(support, 5),
+                'entry':         round(support, 5),
+                'target':        target,
+                'invalidation':  inval,
+                'volume_confirmed': bool(vol_surge),
+                'note':          (
+                    f"Rectangle breakdown at {support:.5f}. "
+                    f"SHORT entry. Target={target:.5f} "
+                    f"({'volume confirmed' if vol_surge else 'no volume confirm'})"
+                ),
+            })
+
+        return results
+
+    # ═════════════════════════════════════════════════════════════
+    # Day 100+ — Book Page 120: MOMENTUM SCREENER (52-week high)
+    # ═════════════════════════════════════════════════════════════
+
+    def detect_momentum_screen(self, df: pd.DataFrame) -> list[dict]:
+        """
+        Book Page 120 — Momentum Screener (52-Week High Proximity)
+        ==========================================================
+        Identifies securities with strong momentum by checking:
+          1. Proximity to 52-week high (within X% — book suggests 10%)
+          2. Trailing % price change ranking
+
+        Pseudocode (from book):
+          proximity_to_high = (high_52wk - current_price) / high_52wk
+          IF proximity_to_high <= 0.10:
+              momentum_candidate = TRUE
+
+          momentum_rank = pct_change(price, lookback=12_or_24_periods)
+          # Rank securities by momentum_rank descending
+
+        For FX (which trades 24/5), 52-week high = highest high in last
+        ~252 trading days (~1 year). For intraday data, we use lookback
+        proportional to data length.
+
+        This is a SCREENING rule, not a directional signal by itself —
+        it identifies momentum candidates for further analysis.
+        """
+        results = []
+        if len(df) < 30:
+            return results
+
+        highs  = df['high'].values
+        closes = df['close'].values
+        n      = len(df)
+
+        # 52-week high — for daily data use 252 bars; for intraday, use
+        # entire available lookback (capped at 1000 bars)
+        lookback_high = min(n, 252) if n >= 252 else min(n, 1000)
+        high_52wk     = float(np.max(highs[-lookback_high:]))
+        curr_price    = float(closes[-1])
+
+        if high_52wk <= 0:
+            return results
+
+        proximity_to_high = (high_52wk - curr_price) / high_52wk
+
+        lookback_12 = min(n, 12)
+        lookback_24 = min(n, 24)
+        pct_12 = (curr_price - float(closes[-lookback_12])) / float(closes[-lookback_12]) if lookback_12 > 0 else 0
+        pct_24 = (curr_price - float(closes[-lookback_24])) / float(closes[-lookback_24]) if lookback_24 > 0 else 0
+
+        MOMENTUM_THRESHOLD = 0.10
+        is_momentum_candidate = proximity_to_high <= MOMENTUM_THRESHOLD
+
+        if is_momentum_candidate:
+            conf = 70
+            conf += int(25 * (1 - proximity_to_high / MOMENTUM_THRESHOLD))
+            if pct_12 > 0:
+                conf += min(10, int(pct_12 * 1000))
+            confidence = min(95, conf)
+
+            direction = 'BULLISH' if (pct_12 > 0 or pct_24 > 0) else 'NEUTRAL'
+
+            results.append({
+                'pattern':              'MOMENTUM_CANDIDATE',
+                'direction':            direction,
+                'trade_action':         'WATCH_LONG' if direction == 'BULLISH' else 'WATCH',
+                'confidence':           confidence,
+                'high_52wk':            round(high_52wk, 5),
+                'current_price':        round(curr_price, 5),
+                'proximity_to_high':    round(proximity_to_high * 100, 2),
+                'pct_change_12':        round(pct_12 * 100, 2),
+                'pct_change_24':        round(pct_24 * 100, 2),
+                'lookback_bars':        lookback_high,
+                'momentum_threshold_pct': MOMENTUM_THRESHOLD * 100,
+                'note':                 (
+                    f"Momentum candidate: price {proximity_to_high*100:.2f}% below "
+                    f"{lookback_high}-bar high ({high_52wk:.5f}). "
+                    f"12-bar change: {pct_12*100:+.2f}%, 24-bar: {pct_24*100:+.2f}%. "
+                    f"{'Strong bullish momentum.' if direction == 'BULLISH' else 'Near high but no positive momentum.'}"
+                ),
+            })
+
+        return results
 
 
 # ═══════════════════════════════════════════════════════════════

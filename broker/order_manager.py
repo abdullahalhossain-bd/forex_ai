@@ -145,6 +145,19 @@ class OrderManager:
                     f"[OrderManager] ✅ ORDER FILLED — {direction} {broker_symbol} "
                     f"lot={lot} ticket={outcome['ticket']}"
                 )
+                # Day 97+ Book Page 11: Execution quality monitoring
+                try:
+                    from monitoring.execution_quality import get_execution_monitor
+                    eqm = get_execution_monitor()
+                    eqm.record_order(
+                        symbol=broker_symbol, direction=direction,
+                        expected_entry=request.get("price", 0),
+                        actual_entry=getattr(result, "price", 0),
+                        lot=lot, success=True,
+                        ticket=outcome.get("ticket"),
+                    )
+                except Exception:
+                    pass
                 return outcome
 
             if not outcome.get("retryable", True):
